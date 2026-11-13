@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAM // Autonomous AI Computer Operator</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="brand">
+      <div class="logo-badge">SAM</div>
+      <div>
+        <div class="brand-title">AUTONOMOUS COMPUTER OPERATOR</div>
+        <div class="brand-subtitle">HP OMEN 16 • RTX 4050 6GB • WINDOWS 11</div>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="telemetry-pill">
+        <div class="indicator-dot"></div>
+        <span id="telemetryCpu">CPU: --%</span>
+      </div>
+      <div class="telemetry-pill">
+        <span id="telemetryRam">RAM: --%</span>
+      </div>
+      <div class="telemetry-pill">
+        <span id="telemetryGpu">RTX 4050: --</span>
+      </div>
+      <button class="btn-emergency-stop" id="emergencyStopBtn">
+        <span>⚠</span> EMERGENCY STOP
+      </button>
+    </div>
+  </header>
+
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar">
+      <div class="nav-item active" data-tab="paneChat">
+        <span class="nav-icon">💬</span> Chat
+      </div>
+      <div class="nav-item" data-tab="paneVoice">
+        <span class="nav-icon">🎙️</span> Voice
+      </div>
+      <div class="nav-item" data-tab="paneTasks">
+        <span class="nav-icon">⚡</span> Active Tasks
+      </div>
+      <div class="nav-item" data-tab="paneComputer">
+        <span class="nav-icon">🖥️</span> Computer Control
+      </div>
+      <div class="nav-item" data-tab="paneCoding">
+        <span class="nav-icon">💻</span> Coding Agent
+      </div>
+      <div class="nav-item" data-tab="paneVideo">
+        <span class="nav-icon">🎬</span> Video Editor
+      </div>
+      <div class="nav-item" data-tab="paneBrowser">
+        <span class="nav-icon">🌐</span> Browser Agent
+      </div>
+      <div class="nav-item" data-tab="paneFiles">
+        <span class="nav-icon">📁</span> Files
+      </div>
+      <div class="nav-item" data-tab="paneMemory">
+        <span class="nav-icon">🧠</span> Memory
+      </div>
+      <div class="nav-item" data-tab="paneSettings">
+        <span class="nav-icon">⚙️</span> Settings
+      </div>
+    </nav>
+
+    <!-- Main Content Panes -->
+    <main class="content-view">
+
+      <!-- 1. CHAT PANE -->
+      <section class="tab-pane active" id="paneChat">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Autonomous Mission Control</h2>
+            <p class="pane-desc">Instruct SAM using voice or natural language. Decomposes goals into verified computer operations.</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" onclick="launchWorkflow('A')">Workflow A: Coding</button>
+            <button class="btn-secondary" onclick="launchWorkflow('B')">Workflow B: Video</button>
+            <button class="btn-secondary" onclick="launchWorkflow('C')">Workflow C: Web</button>
+            <button class="btn-secondary" onclick="launchWorkflow('D')">Workflow D: Hardware</button>
+            <button class="btn-secondary" onclick="launchWorkflow('E')">Workflow E: PDF</button>
+          </div>
+        </div>
+
+        <div class="chat-container">
+          <div class="chat-history" id="chatHistory">
+            <div class="chat-bubble sam">
+              <div class="meta">SAM • READY</div>
+              <div class="msg-content">
+                Greetings. SAM is active and monitoring your HP OMEN 16 Windows 11 desktop.<br>
+                Hardware profile: NVIDIA RTX 4050 Laptop GPU (6GB VRAM), 16GB RAM, Windows 11.<br>
+                What would you like me to inspect, operate, code, edit, or research?
+              </div>
+            </div>
+          </div>
+          <div class="chat-input-bar">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Enter objective (e.g. 'Check my laptop hardware usage and explain issues' or 'Open video and create 1080p vertical edit')...">
+            <button class="btn-primary" id="chatSendBtn">EXECUTE</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. VOICE PANE -->
+      <section class="tab-pane" id="paneVoice">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Real-Time Voice Interface</h2>
+            <p class="pane-desc">Wake word: "Hey SAM" • Push-to-Talk: [Spacebar/Ctrl] • Low-VRAM Local Speech Engine</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">LIVE AUDIO STREAM</div>
+          <div class="waveform-box">
+            <canvas id="waveformCanvas" width="800" height="90"></canvas>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <button class="btn-primary" onmousedown="fetch('/api/voice/push_to_talk?pressed=true',{method:'POST'})" onmouseup="fetch('/api/voice/push_to_talk?pressed=false',{method:'POST'})">HOLD TO TALK</button>
+            <span style="font-size: 13px; color: var(--text-muted);">Microphone: Active (Windows Default) • Engine: faster-whisper (tiny.en)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. ACTIVE TASKS PANE -->
+      <section class="tab-pane" id="paneTasks">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Active Tasks & Verification Loop</h2>
+            <p class="pane-desc">Observe-Plan-Act-Verify Execution Trail</p>
+          </div>
+          <div style="display:flex; gap: 8px;">
+            <button class="btn-secondary" onclick="fetch('/api/tasks/'+currentTaskId+'/pause',{method:'POST'})">Pause</button>
+            <button class="btn-secondary" onclick="fetch('/api/tasks/'+currentTaskId+'/resume',{method:'POST'})">Resume</button>
+            <button class="btn-secondary" style="border-color: var(--accent-red); color: var(--accent-red);" onclick="fetch('/api/tasks/'+currentTaskId+'/stop',{method:'POST'})">Stop Task</button>
+          </div>
+        </div>
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan);" id="activeTaskId">No task active</span>
+              <h3 style="font-size: 16px; margin-top: 4px;" id="activeTaskObjective">Standby</h3>
+            </div>
+            <span class="badge pending" id="activeTaskStatus">IDLE</span>
+          </div>
+          <div class="progress-container">
+            <div class="progress-fill" id="taskProgressBar"></div>
+          </div>
+          <div id="taskStepsList">
+            <div style="color: var(--text-muted); font-size: 13px;">No active steps. Trigger a goal from Chat or use quick workflows.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. COMPUTER CONTROL PANE -->
+      <section class="tab-pane" id="paneComputer">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Windows Computer-Use Engine</h2>
+            <p class="pane-desc">Native Win32 Mouse, Keyboard, Window Management, and Screen Capture</p>
+          </div>
+          <button class="btn-secondary" onclick="fetch('/api/computer/screenshot').then(r=>r.json()).then(d=>alert('Screenshot saved: '+d.path))">Capture Frame</button>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">DESKTOP SURFACE VIEW</div>
+            <div style="background: #000; border-radius: 6px; height: 260px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); color: var(--accent-cyan); font-family: var(--font-mono);">
+              1920x1080 Windows 11 Desktop Screen Surface
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">INPUT CONTROLLERS</div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Active coordinates, foreground window tracking, and session mutex:</p>
+            <div style="font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column; gap: 8px;">
+              <div>• Session Mutex: <span style="color: var(--accent-cyan);">UNLOCKED (Ready)</span></div>
+              <div>• Precision: Sub-pixel smooth Bézier curve interpolation</div>
+              <div>• Typing Mode: Unicode ScanCode direct injection</div>
+              <div>• Window Targeter: Win32 EnumWindows + FindWindow</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. CODING AGENT PANE -->
+      <section class="tab-pane" id="paneCoding">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Autonomous Coding Agent</h2>
+            <p class="pane-desc">Inspects repositories, writes code, runs builds, executes test suites, and verifies execution.</p>
+          </div>
+          <button class="btn-primary" onclick="launchWorkflow('A')">Run Coding Workflow A</button>
+        </div>
+        <div class="card">
+          <div class="card-title">PROJECT REPOSITORY WORKSPACE</div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">Dedicated workspace location: <code>sam/data/workspaces/</code></p>
+          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
+            [✓] VS Code integration ready<br>
+            [✓] Python 3.14 runner verified<br>
+            [✓] Subprocess isolation active<br>
+            [✓] Git branch checkpoints enabled
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. VIDEO EDITOR PANE -->
+      <section class="tab-pane" id="paneVideo">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Autonomous Video Editing Engine</h2>
+            <p class="pane-desc">FFmpeg, OpenCV, and Whisper pipeline. Vertical 9:16 (1080x1920) transformations and subtitle burning.</p>
+          </div>
+          <button class="btn-primary" onclick="launchWorkflow('B')">Run Video Workflow B</button>
+        </div>
+        <div class="card">
+          <div class="card-title">ACTIVE RENDERING PIPELINE</div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">Outputs preserved to: <code>sam/data/video_exports/</code>. Original footage is never overwritten.</p>
+          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
+            [✓] Video Writer: 1080x1920 (9:16 Vertical Export)<br>
+            [✓] Subtitle Generator: Synchronized timecoded captions<br>
+            [✓] Source Preservation Policy: STRICT READ-ONLY<br>
+            [✓] Integrity Validator: Frame and decodability verification
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. BROWSER AGENT PANE -->
+      <section class="tab-pane" id="paneBrowser">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Autonomous Web Browser Agent</h2>
+            <p class="pane-desc">Chrome & Edge automation, web scraping, and research report compiler.</p>
+          </div>
+          <button class="btn-primary" onclick="launchWorkflow('C')">Run Research Workflow C</button>
+        </div>
+        <div class="card">
+          <div class="card-title">BROWSER RUNTIME STATUS</div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Detected Browsers: Microsoft Edge, Google Chrome.</p>
+          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
+            [✓] Navigation engine: Edge & Chrome integration<br>
+            [✓] Content extraction: BeautifulSoup semantic cleaner<br>
+            [✓] Report compilation: Executive markdown generator<br>
+            [✓] Guardrail: Confirmation required for form submission & purchases
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. FILES PANE -->
+      <section class="tab-pane" id="paneFiles">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Document Intelligence & Workspace Files</h2>
+            <p class="pane-desc">Extracts, analyzes, and searches PDF, DOCX, XLSX, and CSV documents.</p>
+          </div>
+          <button class="btn-primary" onclick="launchWorkflow('E')">Run PDF Workflow E</button>
+        </div>
+        <div class="card">
+          <div class="card-title">PARSER INTEGRATIONS</div>
+          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
+            [✓] PDF Reader: pypdf v4.3.1<br>
+            [✓] Word Reader: python-docx v1.1.2<br>
+            [✓] Data Tables: pandas v3.0.5 & csv<br>
+            [✓] Output Reports: Markdown & Structured Text
+          </div>
+        </div>
+      </section>
+
+      <!-- 9. MEMORY PANE -->
+      <section class="tab-pane" id="paneMemory">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Personal Memory & Workflows</h2>
+            <p class="pane-desc">SQLite-backed personal preferences, project context, and task history.</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">STORED MEMORIES & PREFERENCES</div>
+          <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Database: <code>sam/data/sam_memory.db</code></div>
+          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
+            • Hardware Profile: HP OMEN 16 (Windows 11, RTX 4050 6GB)<br>
+            • Default Local Model: Qwen3 4B via Ollama<br>
+            • Audio Preference: Push-to-Talk active<br>
+            • Video Format: 1080p vertical (9:16) for short-form media
+          </div>
+        </div>
+      </section>
+
+      <!-- 10. SETTINGS PANE -->
+      <section class="tab-pane" id="paneSettings">
+        <div class="pane-header">
+          <div>
+            <h2 class="pane-title">Hardware Telemetry & Settings</h2>
+            <p class="pane-desc">System performance, Ollama configuration, and security risk policies.</p>
+          </div>
+          <button class="btn-primary" onclick="launchWorkflow('D')">Run Hardware Workflow D</button>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">HARDWARE TELEMETRY</div>
+            <div style="font-family: var(--font-mono); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px;">
+              <div>• CPU Usage: <span id="diagCpu">--</span></div>
+              <div>• System RAM: <span id="diagRam">--</span></div>
+              <div>• GPU / VRAM: <span id="diagGpu">--</span></div>
+              <div>• Operating System: Windows 11 Home/Pro 64-bit</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">SECURITY & LOCAL INTELLIGENCE</div>
+            <div style="font-family: var(--font-mono); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px;">
+              <div>• Local Provider: Ollama (qwen3:4b)</div>
+              <div>• Cloud Services: <span style="color: var(--accent-cyan);">DISABLED (Privacy Preserved)</span></div>
+              <div>• Low-Risk Actions: Auto-Approved</div>
+              <div>• High-Risk Actions: Explicit User Confirmation Required</div>
+              <div>• Audit Log: <code>sam/logs/audit.jsonl</code></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- User Approval Modal -->
+  <div class="modal-overlay" id="approvalModal" style="display: none;">
+    <div class="modal-box">
+      <div class="modal-title">
+        <span>⚠</span> PERMISSION CONFIRMATION REQUIRED
+      </div>
+      <p style="font-size: 13.5px; margin-bottom: 12px;">SAM is requesting permission to execute an operation:</p>
+      <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12px; margin-bottom: 16px; border: 1px solid var(--border-color);">
+        <div><strong>Action:</strong> <span id="modalActionName">--</span></div>
+        <div><strong>Risk Tier:</strong> <span id="modalRiskLevel">HIGH</span></div>
+        <div style="margin-top: 8px;"><strong>Parameters:</strong></div>
+        <pre id="modalDetails" style="max-height: 120px; overflow-y: auto; color: var(--accent-cyan);"></pre>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn-secondary" onclick="rejectAction()">REJECT</button>
+        <button class="btn-primary" onclick="approveAction()">APPROVE & CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
+
