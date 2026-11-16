@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+
+# SAM runtime generated artifacts & test media
+sam/data/screenshots/
+sam/data/video_exports/
+sam/data/workspaces/
+sam/data/*.wav
+sam/data/reports/*.pdf
+sam/logs/*.jsonl
+*.log
+
+# OS / Editor
+.vscode/
+.idea/
+Thumbs.db
+[Dd]esktop.ini
