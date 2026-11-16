@@ -143,6 +143,11 @@ class MemoryStore:
             rows.reverse()
             return rows
 
+    def clear_chat_history(self):
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM conversations")
+            conn.commit()
+
     def record_task(self, task_dict: dict[str, Any]):
         with self._get_connection() as conn:
             conn.execute("""

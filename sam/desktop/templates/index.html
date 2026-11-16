@@ -19,7 +19,7 @@
     </div>
     <div class="header-status">
       <div class="telemetry-pill">
-        <div class="indicator-dot"></div>
+        <div class="indicator-dot" id="dotStatus"></div>
         <span id="telemetryCpu">CPU: --%</span>
       </div>
       <div class="telemetry-pill">
@@ -27,6 +27,9 @@
       </div>
       <div class="telemetry-pill">
         <span id="telemetryGpu">RTX 4050: --</span>
+      </div>
+      <div class="telemetry-pill">
+        <span id="telemetryModel" style="color: var(--accent-cyan);">Model: Qwen</span>
       </div>
       <button class="btn-emergency-stop" id="emergencyStopBtn">
         <span>⚠</span> EMERGENCY STOP
@@ -37,18 +40,21 @@
   <div class="app-container">
     <!-- Sidebar Navigation -->
     <nav class="sidebar">
+      <div class="nav-section-label">Core Assistant</div>
       <div class="nav-item active" data-tab="paneChat">
-        <span class="nav-icon">💬</span> Chat
+        <span class="nav-icon">💬</span> AI Chat
       </div>
       <div class="nav-item" data-tab="paneVoice">
-        <span class="nav-icon">🎙️</span> Voice
+        <span class="nav-icon">🎙️</span> Voice Controls
       </div>
       <div class="nav-item" data-tab="paneTasks">
-        <span class="nav-icon">⚡</span> Active Tasks
+        <span class="nav-icon">⚡</span> Task Manager
       </div>
       <div class="nav-item" data-tab="paneComputer">
         <span class="nav-icon">🖥️</span> Computer Control
       </div>
+
+      <div class="nav-section-label" style="margin-top: 10px;">Workspaces</div>
       <div class="nav-item" data-tab="paneCoding">
         <span class="nav-icon">💻</span> Coding Agent
       </div>
@@ -59,263 +65,498 @@
         <span class="nav-icon">🌐</span> Browser Agent
       </div>
       <div class="nav-item" data-tab="paneFiles">
-        <span class="nav-icon">📁</span> Files
+        <span class="nav-icon">📁</span> Files & Docs
       </div>
       <div class="nav-item" data-tab="paneMemory">
-        <span class="nav-icon">🧠</span> Memory
+        <span class="nav-icon">🧠</span> Memory Store
       </div>
       <div class="nav-item" data-tab="paneSettings">
-        <span class="nav-icon">⚙️</span> Settings
+        <span class="nav-icon">⚙️</span> Settings & Audit
+      </div>
+
+      <div class="sidebar-footer">
+        <div>SAM Engine v2.0</div>
+        <div style="color: var(--accent-cyan); margin-top: 3px;">Local-First Autonomous AI</div>
       </div>
     </nav>
 
     <!-- Main Content Panes -->
     <main class="content-view">
 
-      <!-- 1. CHAT PANE -->
+      <!-- =========================================================
+           1. MAIN AI CHAT PANE
+           ========================================================= -->
       <section class="tab-pane active" id="paneChat">
         <div class="pane-header">
           <div>
             <h2 class="pane-title">Autonomous Mission Control</h2>
-            <p class="pane-desc">Instruct SAM using voice or natural language. Decomposes goals into verified computer operations.</p>
+            <p class="pane-desc">Instruct SAM in natural language. Goals are autonomously decomposed and verified on your Windows 11 desktop.</p>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn-secondary" onclick="launchWorkflow('A')">Workflow A: Coding</button>
-            <button class="btn-secondary" onclick="launchWorkflow('B')">Workflow B: Video</button>
-            <button class="btn-secondary" onclick="launchWorkflow('C')">Workflow C: Web</button>
-            <button class="btn-secondary" onclick="launchWorkflow('D')">Workflow D: Hardware</button>
-            <button class="btn-secondary" onclick="launchWorkflow('E')">Workflow E: PDF</button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn-secondary" onclick="launchWorkflow('A')">⚡ Code Workflow</button>
+            <button class="btn-secondary" onclick="launchWorkflow('B')">🎬 Video Workflow</button>
+            <button class="btn-secondary" onclick="launchWorkflow('C')">🌐 Web Research</button>
+            <button class="btn-secondary" onclick="launchWorkflow('D')">🔍 Hardware Health</button>
+            <button class="btn-secondary" onclick="launchWorkflow('E')">📄 PDF Summary</button>
           </div>
         </div>
 
-        <div class="chat-container">
+        <div class="chat-pane-wrapper">
           <div class="chat-history" id="chatHistory">
             <div class="chat-bubble sam">
-              <div class="meta">SAM • READY</div>
+              <div class="meta">
+                <span class="meta-sam">SAM OPERATOR</span>
+                <span class="badge completed">ONLINE</span>
+              </div>
               <div class="msg-content">
-                Greetings. SAM is active and monitoring your HP OMEN 16 Windows 11 desktop.<br>
-                Hardware profile: NVIDIA RTX 4050 Laptop GPU (6GB VRAM), 16GB RAM, Windows 11.<br>
-                What would you like me to inspect, operate, code, edit, or research?
+                Greetings. SAM is active on your <strong>HP OMEN 16</strong>.<br>
+                • <strong>Hardware:</strong> NVIDIA GeForce RTX 4050 Laptop GPU (6GB VRAM), 16GB RAM, Windows 11.<br>
+                • <strong>Inference Engine:</strong> Local Ollama runtime with Qwen models.<br>
+                • <strong>Computer Use:</strong> Direct Win32 automation, screen observation, and verified task execution.<br><br>
+                Type any goal below or select a quick workflow to begin.
               </div>
             </div>
           </div>
+
+          <!-- Chat Input Bar -->
           <div class="chat-input-bar">
-            <input type="text" class="chat-input" id="chatInput" placeholder="Enter objective (e.g. 'Check my laptop hardware usage and explain issues' or 'Open video and create 1080p vertical edit')...">
-            <button class="btn-primary" id="chatSendBtn">EXECUTE</button>
+            <button class="chat-action-btn" title="Clear Conversation" onclick="confirmClearChat()">🗑️</button>
+            <button class="chat-action-btn" title="Attach / Upload File to Workspace" onclick="document.getElementById('chatFileUpload').click()">📎</button>
+            <input type="file" id="chatFileUpload" style="display: none;" onchange="handleChatFileUpload(this)">
+
+            <textarea class="chat-textarea" id="chatInput" placeholder="Enter objective (e.g. 'Check my CPU and GPU temperature', 'Open Notepad and write test sentence')... Press Enter to send, Shift+Enter for new line." rows="1"></textarea>
+
+            <button class="btn-primary" id="chatSendBtn" onclick="handleSendChat()">
+              <span>SEND</span> ➔
+            </button>
           </div>
         </div>
       </section>
 
-      <!-- 2. VOICE PANE -->
+      <!-- =========================================================
+           2. VOICE CONTROLS PANE
+           ========================================================= -->
       <section class="tab-pane" id="paneVoice">
         <div class="pane-header">
           <div>
-            <h2 class="pane-title">Real-Time Voice Interface</h2>
-            <p class="pane-desc">Wake word: "Hey SAM" • Push-to-Talk: [Spacebar/Ctrl] • Low-VRAM Local Speech Engine</p>
+            <h2 class="pane-title">Voice Controls & Transcription</h2>
+            <p class="pane-desc">Optional speech input. Audio is transcribed with faster-whisper and presented for review before execution.</p>
           </div>
+          <button class="btn-secondary" onclick="refreshAudioDevices()">🔄 Refresh Devices</button>
         </div>
-        <div class="card">
-          <div class="card-title">LIVE AUDIO STREAM</div>
-          <div class="waveform-box">
-            <canvas id="waveformCanvas" width="800" height="90"></canvas>
+
+        <!-- Microphone Device Selector Bar -->
+        <div class="voice-device-bar">
+          <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Target Microphone:</span>
+          <select class="device-select" id="voiceDeviceSelect">
+            <option value="-1">Loading audio input devices...</option>
+          </select>
+          <select class="device-select" id="voiceDurationSelect" style="max-width: 140px;">
+            <option value="3">3 Seconds</option>
+            <option value="6" selected>6 Seconds</option>
+            <option value="10">10 Seconds</option>
+          </select>
+        </div>
+
+        <div class="grid-2">
+          <!-- Live Audio Visualizer Card -->
+          <div class="card">
+            <div class="card-title">MICROPHONE INPUT & PUSH-TO-TALK</div>
+            <div class="waveform-box">
+              <canvas id="waveformCanvas" width="500" height="80" style="width: 100%; max-height: 80px;"></canvas>
+              <div class="mic-meter-bar">
+                <div class="mic-meter-fill" id="micMeterFill"></div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; justify-content: space-between;">
+              <button class="btn-primary" id="btnRecordVoice" onclick="handleRecordVoice()">
+                🎙️ START RECORDING
+              </button>
+              <button class="btn-secondary" id="btnPushToTalk" onmousedown="handlePtt(true)" onmouseup="handlePtt(false)">
+                HOLD TO TALK (PTT)
+              </button>
+              <span id="voiceStatusText" style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">Status: Standby</span>
+            </div>
           </div>
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <button class="btn-primary" onmousedown="fetch('/api/voice/push_to_talk?pressed=true',{method:'POST'})" onmouseup="fetch('/api/voice/push_to_talk?pressed=false',{method:'POST'})">HOLD TO TALK</button>
-            <span style="font-size: 13px; color: var(--text-muted);">Microphone: Active (Windows Default) • Engine: faster-whisper (tiny.en)</span>
+
+          <!-- Transcript Review & Execution Card -->
+          <div class="card">
+            <div class="card-title">TRANSCRIPTION PREVIEW & EDIT</div>
+            <p style="font-size: 12px; color: var(--text-muted);">Review and edit the recognized text before submitting as an autonomous goal:</p>
+            <textarea class="transcript-textarea" id="transcriptTextarea" placeholder="Recognized speech will appear here for verification... You can edit this text freely."></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="badge idle" id="transcriptReliability">NO INPUT</span>
+              <button class="btn-primary" id="btnExecuteTranscript" onclick="handleExecuteTranscript()">
+                EXECUTE GOAL ➔
+              </button>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 3. ACTIVE TASKS PANE -->
+      <!-- =========================================================
+           3. ACTIVE TASKS PANE
+           ========================================================= -->
       <section class="tab-pane" id="paneTasks">
         <div class="pane-header">
           <div>
-            <h2 class="pane-title">Active Tasks & Verification Loop</h2>
-            <p class="pane-desc">Observe-Plan-Act-Verify Execution Trail</p>
+            <h2 class="pane-title">Task Manager & Execution Trail</h2>
+            <p class="pane-desc">Observe-Plan-Act-Verify live execution tracker with step-level status.</p>
           </div>
           <div style="display:flex; gap: 8px;">
-            <button class="btn-secondary" onclick="fetch('/api/tasks/'+currentTaskId+'/pause',{method:'POST'})">Pause</button>
-            <button class="btn-secondary" onclick="fetch('/api/tasks/'+currentTaskId+'/resume',{method:'POST'})">Resume</button>
-            <button class="btn-secondary" style="border-color: var(--accent-red); color: var(--accent-red);" onclick="fetch('/api/tasks/'+currentTaskId+'/stop',{method:'POST'})">Stop Task</button>
+            <button class="btn-secondary" onclick="handlePauseTask()">⏸ Pause</button>
+            <button class="btn-secondary" onclick="handleResumeTask()">▶ Resume</button>
+            <button class="btn-danger" onclick="handleStopTask()">⏹ Cancel Task</button>
           </div>
         </div>
+
+        <!-- Active Task Card -->
         <div class="card">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div>
-              <span style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan);" id="activeTaskId">No task active</span>
+              <span style="font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-cyan);" id="activeTaskId">No active task</span>
               <h3 style="font-size: 16px; margin-top: 4px;" id="activeTaskObjective">Standby</h3>
+              <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;" id="activeTaskPlanner">Planned by: Standby</div>
             </div>
-            <span class="badge pending" id="activeTaskStatus">IDLE</span>
+            <span class="badge idle" id="activeTaskStatus">IDLE</span>
           </div>
+
           <div class="progress-container">
             <div class="progress-fill" id="taskProgressBar"></div>
           </div>
-          <div id="taskStepsList">
-            <div style="color: var(--text-muted); font-size: 13px;">No active steps. Trigger a goal from Chat or use quick workflows.</div>
+
+          <div class="steps-list" id="taskStepsList">
+            <div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 18px 0;">
+              No active task running. Start a goal from Chat, Voice, or Workspaces.
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Task History Card -->
+        <div class="card">
+          <div class="card-title">RECENT TASK HISTORY (SQLITE PERSISTED)</div>
+          <div style="overflow-x: auto;">
+            <table class="data-table" id="taskHistoryTable">
+              <thead>
+                <tr>
+                  <th>Task ID</th>
+                  <th>Objective</th>
+                  <th>Status</th>
+                  <th>Steps</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="taskHistoryBody">
+                <tr><td colspan="5" style="color: var(--text-muted);">Loading task history...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
 
-      <!-- 4. COMPUTER CONTROL PANE -->
+      <!-- =========================================================
+           4. COMPUTER CONTROL PANE
+           ========================================================= -->
       <section class="tab-pane" id="paneComputer">
         <div class="pane-header">
           <div>
-            <h2 class="pane-title">Windows Computer-Use Engine</h2>
-            <p class="pane-desc">Native Win32 Mouse, Keyboard, Window Management, and Screen Capture</p>
+            <h2 class="pane-title">Live Windows Desktop Surface</h2>
+            <p class="pane-desc">Live desktop screen capture, active window monitoring, and automation state.</p>
           </div>
-          <button class="btn-secondary" onclick="fetch('/api/computer/screenshot').then(r=>r.json()).then(d=>alert('Screenshot saved: '+d.path))">Capture Frame</button>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <label style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" id="autoRefreshScreenToggle" checked onchange="toggleScreenAutoRefresh(this.checked)">
+              Auto-refresh (2s)
+            </label>
+            <button class="btn-secondary" onclick="refreshLiveScreen()">📸 Capture Now</button>
+          </div>
         </div>
+
         <div class="grid-2">
-          <div class="card">
-            <div class="card-title">DESKTOP SURFACE VIEW</div>
-            <div style="background: #000; border-radius: 6px; height: 260px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); color: var(--accent-cyan); font-family: var(--font-mono);">
-              1920x1080 Windows 11 Desktop Screen Surface
+          <!-- Real Desktop Preview -->
+          <div class="card" style="padding: 12px;">
+            <div class="screen-preview-container">
+              <div class="screen-overlay-bar">
+                <span id="screenLiveBadge">● LIVE SCREEN</span>
+                <span id="screenResolution">1920x1080</span>
+              </div>
+              <img id="liveScreenImg" class="screen-preview-img" src="/api/computer/screenshot/image" alt="Live Windows Screen">
             </div>
           </div>
-          <div class="card">
-            <div class="card-title">INPUT CONTROLLERS</div>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Active coordinates, foreground window tracking, and session mutex:</p>
-            <div style="font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column; gap: 8px;">
-              <div>• Session Mutex: <span style="color: var(--accent-cyan);">UNLOCKED (Ready)</span></div>
-              <div>• Precision: Sub-pixel smooth Bézier curve interpolation</div>
-              <div>• Typing Mode: Unicode ScanCode direct injection</div>
-              <div>• Window Targeter: Win32 EnumWindows + FindWindow</div>
+
+          <!-- Foreground Window & Session State -->
+          <div>
+            <div class="card">
+              <div class="card-title">FOREGROUND WINDOW STATUS</div>
+              <div style="font-family: var(--font-mono); font-size: 12.5px; display: flex; flex-direction: column; gap: 10px;">
+                <div>• Window Title: <span style="color: var(--accent-cyan);" id="activeWinTitle">Detecting...</span></div>
+                <div>• Process ID: <span id="activeWinPid">--</span></div>
+                <div>• Window Handle (HWND): <span id="activeWinHwnd">--</span></div>
+                <div>• Window Bounds: <span id="activeWinRect">--</span></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">AUTOMATION CONTROLLER</div>
+              <div style="font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;">
+                <div>• Native Input: Win32 SendInput (Keyboard & Mouse)</div>
+                <div>• Text Injection: Unicode ScanCode + RichEditD2DPT Direct</div>
+                <div>• Mutex Status: <span style="color: var(--accent-emerald);">IDLE / AVAILABLE</span></div>
+                <div>• Emergency Stop State: <span id="statusEmergencyStop" style="color: var(--accent-emerald);">NORMAL</span></div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn-danger" style="flex: 1;" onclick="triggerEmergencyStop()">TRIGGER EMERGENCY STOP</button>
+                <button class="btn-secondary" onclick="handleResetEmergencyStop()">RESET STOP</button>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- 5. CODING AGENT PANE -->
+      <!-- =========================================================
+           5. CODING AGENT WORKSPACE
+           ========================================================= -->
       <section class="tab-pane" id="paneCoding">
         <div class="pane-header">
           <div>
-            <h2 class="pane-title">Autonomous Coding Agent</h2>
-            <p class="pane-desc">Inspects repositories, writes code, runs builds, executes test suites, and verifies execution.</p>
+            <h2 class="pane-title">Autonomous Coding Workspace</h2>
+            <p class="pane-desc">Inspect code, edit Python scripts, execute builds, and capture stdout/stderr.</p>
           </div>
-          <button class="btn-primary" onclick="launchWorkflow('A')">Run Coding Workflow A</button>
+          <div style="display: flex; gap: 8px;">
+            <select class="device-select" id="codeWorkspaceSelect" style="min-width: 140px;" onchange="loadCodingFiles()">
+              <option value="default_project">default_project</option>
+            </select>
+            <select class="device-select" id="codeFileSelect" style="min-width: 160px;" onchange="loadCodingFileContent()">
+              <option value="">Select a file...</option>
+            </select>
+          </div>
         </div>
+
         <div class="card">
-          <div class="card-title">PROJECT REPOSITORY WORKSPACE</div>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">Dedicated workspace location: <code>sam/data/workspaces/</code></p>
-          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
-            [✓] VS Code integration ready<br>
-            [✓] Python 3.14 runner verified<br>
-            [✓] Subprocess isolation active<br>
-            [✓] Git branch checkpoints enabled
+          <div class="card-title">
+            <span>IN-BROWSER SCRIPT EDITOR</span>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-secondary" onclick="saveCodingFile()">💾 Save Script</button>
+              <button class="btn-primary" onclick="runCodingScript()">▶ Run Python Script</button>
+            </div>
           </div>
+          <textarea class="code-editor-area" id="codeEditor" spellcheck="false" placeholder="# Select or type Python code here..."></textarea>
+          
+          <div class="card-title" style="margin-top: 16px;">TERMINAL OUTPUT (STDOUT / STDERR)</div>
+          <div class="terminal-console" id="codeTerminalConsole">Ready. Click 'Run Python Script' to execute in workspace.</div>
         </div>
       </section>
 
-      <!-- 6. VIDEO EDITOR PANE -->
+      <!-- =========================================================
+           6. VIDEO EDITOR WORKSPACE
+           ========================================================= -->
       <section class="tab-pane" id="paneVideo">
         <div class="pane-header">
           <div>
             <h2 class="pane-title">Autonomous Video Editing Engine</h2>
-            <p class="pane-desc">FFmpeg, OpenCV, and Whisper pipeline. Vertical 9:16 (1080x1920) transformations and subtitle burning.</p>
+            <p class="pane-desc">FFmpeg vertical 9:16 (1080x1920) transformations and Whisper subtitle overlays.</p>
           </div>
-          <button class="btn-primary" onclick="launchWorkflow('B')">Run Video Workflow B</button>
+          <button class="btn-primary" onclick="handleRenderVideo()">🎬 Trigger 1080p Vertical Render</button>
         </div>
-        <div class="card">
-          <div class="card-title">ACTIVE RENDERING PIPELINE</div>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">Outputs preserved to: <code>sam/data/video_exports/</code>. Original footage is never overwritten.</p>
-          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
-            [✓] Video Writer: 1080x1920 (9:16 Vertical Export)<br>
-            [✓] Subtitle Generator: Synchronized timecoded captions<br>
-            [✓] Source Preservation Policy: STRICT READ-ONLY<br>
-            [✓] Integrity Validator: Frame and decodability verification
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">RENDER CONFIGURATION</div>
+            <div style="font-size: 13px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 16px;">
+              • <strong>Output Format:</strong> 1080 x 1920 (9:16 Vertical Export)<br>
+              • <strong>Frame Rate:</strong> 30 FPS<br>
+              • <strong>Subtitles:</strong> Synchronized SRT with bounding styling<br>
+              • <strong>Source Policy:</strong> Strict Read-Only (Original footage is never overwritten)
+            </div>
+            <button class="btn-primary" style="width: 100%; justify-content: center;" onclick="handleRenderVideo()">
+              RENDER VERTICAL VIDEO
+            </button>
+            <div id="videoRenderStatus" style="font-size: 12px; font-family: var(--font-mono); color: var(--accent-cyan); margin-top: 10px; display: none;"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">VIDEO EXPORTS ARCHIVE</div>
+            <div style="overflow-y: auto; max-height: 240px;">
+              <table class="data-table" id="videoExportsTable">
+                <thead>
+                  <tr>
+                    <th>Filename</th>
+                    <th>Size (MB)</th>
+                  </tr>
+                </thead>
+                <tbody id="videoExportsBody">
+                  <tr><td colspan="2" style="color: var(--text-muted);">Loading exports...</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 7. BROWSER AGENT PANE -->
+      <!-- =========================================================
+           7. BROWSER AGENT WORKSPACE
+           ========================================================= -->
       <section class="tab-pane" id="paneBrowser">
         <div class="pane-header">
           <div>
-            <h2 class="pane-title">Autonomous Web Browser Agent</h2>
-            <p class="pane-desc">Chrome & Edge automation, web scraping, and research report compiler.</p>
+            <h2 class="pane-title">Autonomous Web Research Agent</h2>
+            <p class="pane-desc">Automated web scraping, semantic text extraction, and research summary generation.</p>
           </div>
-          <button class="btn-primary" onclick="launchWorkflow('C')">Run Research Workflow C</button>
         </div>
+
         <div class="card">
-          <div class="card-title">BROWSER RUNTIME STATUS</div>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Detected Browsers: Microsoft Edge, Google Chrome.</p>
-          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
-            [✓] Navigation engine: Edge & Chrome integration<br>
-            [✓] Content extraction: BeautifulSoup semantic cleaner<br>
-            [✓] Report compilation: Executive markdown generator<br>
-            [✓] Guardrail: Confirmation required for form submission & purchases
+          <div class="card-title">RESEARCH TARGET</div>
+          <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+            <input type="text" class="chat-input" id="browserQueryInput" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px 12px; color: #fff;" placeholder="Enter search topic (e.g. 'NVIDIA Ada Lovelace Architecture')...">
+            <input type="text" class="chat-input" id="browserUrlInput" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px 12px; color: #fff;" placeholder="Optional direct URL (https://...)">
+            <button class="btn-primary" onclick="handleBrowserResearch()">RESEARCH & EXTRACT</button>
+          </div>
+
+          <div class="card-title">COMPILED RESEARCH REPORT</div>
+          <div class="terminal-console" id="browserReportConsole" style="max-height: 300px; color: #e2e8f0;">
+            Standby. Enter a research query above to scrape and summarize information.
           </div>
         </div>
       </section>
 
-      <!-- 8. FILES PANE -->
+      <!-- =========================================================
+           8. FILES & DOCUMENTS WORKSPACE
+           ========================================================= -->
       <section class="tab-pane" id="paneFiles">
         <div class="pane-header">
           <div>
             <h2 class="pane-title">Document Intelligence & Workspace Files</h2>
-            <p class="pane-desc">Extracts, analyzes, and searches PDF, DOCX, XLSX, and CSV documents.</p>
+            <p class="pane-desc">Extract insights, parse documents, and browse workspace files.</p>
           </div>
-          <button class="btn-primary" onclick="launchWorkflow('E')">Run PDF Workflow E</button>
+          <button class="btn-primary" onclick="document.getElementById('docFileUpload').click()">📁 Upload File</button>
+          <input type="file" id="docFileUpload" style="display:none;" onchange="handleDocUpload(this)">
         </div>
-        <div class="card">
-          <div class="card-title">PARSER INTEGRATIONS</div>
-          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
-            [✓] PDF Reader: pypdf v4.3.1<br>
-            [✓] Word Reader: python-docx v1.1.2<br>
-            [✓] Data Tables: pandas v3.0.5 & csv<br>
-            [✓] Output Reports: Markdown & Structured Text
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">WORKSPACE DOCUMENTS</div>
+            <div style="overflow-y: auto; max-height: 260px;">
+              <table class="data-table" id="docFilesTable">
+                <thead>
+                  <tr>
+                    <th>Filename</th>
+                    <th>Type</th>
+                    <th>Size (KB)</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="docFilesBody">
+                  <tr><td colspan="4" style="color: var(--text-muted);">Loading files...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">DOCUMENT SUMMARY INSIGHTS</div>
+            <div class="terminal-console" id="docSummaryConsole" style="max-height: 260px; color: #cbd5e1;">
+              Select a file and click 'Summarize' to extract document insights using pypdf/python-docx.
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 9. MEMORY PANE -->
+      <!-- =========================================================
+           9. MEMORY STORE WORKSPACE
+           ========================================================= -->
       <section class="tab-pane" id="paneMemory">
         <div class="pane-header">
           <div>
             <h2 class="pane-title">Personal Memory & Workflows</h2>
-            <p class="pane-desc">SQLite-backed personal preferences, project context, and task history.</p>
+            <p class="pane-desc">SQLite-backed personal preferences, project context, and long-term memory store.</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="memorySearchInput" placeholder="Search memories..." onkeyup="searchMemories(this.value)" style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 6px 12px; color: #fff; font-size: 12px;">
+            <button class="btn-secondary" onclick="loadAllMemories()">🔄 Refresh</button>
           </div>
         </div>
+
         <div class="card">
-          <div class="card-title">STORED MEMORIES & PREFERENCES</div>
-          <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Database: <code>sam/data/sam_memory.db</code></div>
-          <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; border: 1px solid var(--border-color);">
-            • Hardware Profile: HP OMEN 16 (Windows 11, RTX 4050 6GB)<br>
-            • Default Local Model: Qwen3 4B via Ollama<br>
-            • Audio Preference: Push-to-Talk active<br>
-            • Video Format: 1080p vertical (9:16) for short-form media
+          <div class="card-title">STORED PREFERENCES & CONTEXT</div>
+          <div style="overflow-x: auto;">
+            <table class="data-table" id="memoriesTable">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Key</th>
+                  <th>Value</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="memoriesBody">
+                <tr><td colspan="4" style="color: var(--text-muted);">Loading memories...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card-title" style="margin-top: 20px;">STORE NEW PREFERENCE</div>
+          <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <input type="text" id="newMemCategory" placeholder="Category (e.g. preferences)" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 7px 10px; color: #fff;">
+            <input type="text" id="newMemKey" placeholder="Key (e.g. theme_preference)" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 7px 10px; color: #fff;">
+            <input type="text" id="newMemVal" placeholder="Value (e.g. dark_graphite)" style="flex: 2; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 7px 10px; color: #fff;">
+            <button class="btn-primary" onclick="saveNewMemory()">SAVE MEMORY</button>
           </div>
         </div>
       </section>
 
-      <!-- 10. SETTINGS PANE -->
+      <!-- =========================================================
+           10. SETTINGS & SECURITY AUDIT PANE
+           ========================================================= -->
       <section class="tab-pane" id="paneSettings">
         <div class="pane-header">
           <div>
-            <h2 class="pane-title">Hardware Telemetry & Settings</h2>
-            <p class="pane-desc">System performance, Ollama configuration, and security risk policies.</p>
+            <h2 class="pane-title">Settings & Security Governance</h2>
+            <p class="pane-desc">Local LLM model configuration, security policies, and append-only audit trail.</p>
           </div>
-          <button class="btn-primary" onclick="launchWorkflow('D')">Run Hardware Workflow D</button>
+          <button class="btn-secondary" onclick="loadSettingsAndAudit()">🔄 Refresh Status</button>
         </div>
+
         <div class="grid-2">
+          <!-- Model Selection & Engine Status -->
           <div class="card">
-            <div class="card-title">HARDWARE TELEMETRY</div>
-            <div style="font-family: var(--font-mono); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px;">
-              <div>• CPU Usage: <span id="diagCpu">--</span></div>
-              <div>• System RAM: <span id="diagRam">--</span></div>
-              <div>• GPU / VRAM: <span id="diagGpu">--</span></div>
-              <div>• Operating System: Windows 11 Home/Pro 64-bit</div>
+            <div class="card-title">LOCAL INFERENCE ENGINE (OLLAMA)</div>
+            <div style="font-family: var(--font-mono); font-size: 12.5px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+              <div>• Ollama Daemon: <span id="settingsOllamaStatus" style="color: var(--accent-emerald);">ONLINE</span></div>
+              <div>• Host Endpoint: <code>http://127.0.0.1:11434</code></div>
+              <div>• Target Hardware: NVIDIA GeForce RTX 4050 6GB Laptop GPU</div>
+              <div>• Active Model: <span id="settingsActiveModel" style="color: var(--accent-cyan);">qwen2.5:3b</span></div>
+            </div>
+
+            <div class="card-title">SELECT ACTIVE MODEL</div>
+            <div style="display: flex; gap: 8px;">
+              <select class="device-select" id="settingsModelSelect">
+                <option value="qwen2.5:3b">qwen2.5:3b (Fast Deterministic Planning • 1.9GB)</option>
+                <option value="qwen3:4b">qwen3:4b (Deep Reasoning • 2.5GB)</option>
+              </select>
+              <button class="btn-primary" onclick="handleSwitchModel()">APPLY MODEL</button>
             </div>
           </div>
+
+          <!-- Security Gatekeeper Policy -->
           <div class="card">
-            <div class="card-title">SECURITY & LOCAL INTELLIGENCE</div>
-            <div style="font-family: var(--font-mono); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px;">
-              <div>• Local Provider: Ollama (qwen3:4b)</div>
-              <div>• Cloud Services: <span style="color: var(--accent-cyan);">DISABLED (Privacy Preserved)</span></div>
-              <div>• Low-Risk Actions: Auto-Approved</div>
-              <div>• High-Risk Actions: Explicit User Confirmation Required</div>
-              <div>• Audit Log: <code>sam/logs/audit.jsonl</code></div>
+            <div class="card-title">SECURITY GATEKEEPER POLICY</div>
+            <div style="font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;">
+              <div>• <span style="color: var(--accent-emerald);">LOW RISK:</span> Telemetry, observations, read actions (Auto-approved)</div>
+              <div>• <span style="color: var(--accent-amber);">MEDIUM RISK:</span> Typing, running tests, window focus (Guarded)</div>
+              <div>• <span style="color: var(--accent-rose);">HIGH RISK:</span> File overwrite, shell deletes, external publish (User Approval Required)</div>
+              <div>• Audit Log Path: <code>sam/logs/audit.jsonl</code></div>
             </div>
+            <button class="btn-secondary" style="border-color: var(--accent-emerald); color: var(--accent-emerald);" onclick="handleResetEmergencyStop()">
+              RESET EMERGENCY STOP
+            </button>
+          </div>
+        </div>
+
+        <!-- Audit Log Viewer -->
+        <div class="card">
+          <div class="card-title">APPEND-ONLY AUDIT LOG (RECENT EVENTS)</div>
+          <div class="terminal-console" id="auditLogsConsole" style="max-height: 220px; font-size: 11px;">
+            Loading audit records...
           </div>
         </div>
       </section>
@@ -323,22 +564,22 @@
     </main>
   </div>
 
-  <!-- User Approval Modal -->
+  <!-- User Permission Approval Modal -->
   <div class="modal-overlay" id="approvalModal" style="display: none;">
     <div class="modal-box">
       <div class="modal-title">
-        <span>⚠</span> PERMISSION CONFIRMATION REQUIRED
+        <span>⚠</span> PERMISSION APPROVAL REQUIRED
       </div>
-      <p style="font-size: 13.5px; margin-bottom: 12px;">SAM is requesting permission to execute an operation:</p>
-      <div style="background: #07090e; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12px; margin-bottom: 16px; border: 1px solid var(--border-color);">
-        <div><strong>Action:</strong> <span id="modalActionName">--</span></div>
-        <div><strong>Risk Tier:</strong> <span id="modalRiskLevel">HIGH</span></div>
+      <p style="font-size: 13.5px; margin-bottom: 12px; color: var(--text-main);">SAM requires your explicit confirmation to execute this operation:</p>
+      <div style="background: #080c14; padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12px; margin-bottom: 16px; border: 1px solid var(--border-subtle);">
+        <div><strong>Operation:</strong> <span id="modalActionName" style="color: var(--accent-cyan);">--</span></div>
+        <div style="margin-top: 4px;"><strong>Risk Tier:</strong> <span id="modalRiskLevel" class="badge waiting_approval">HIGH</span></div>
         <div style="margin-top: 8px;"><strong>Parameters:</strong></div>
-        <pre id="modalDetails" style="max-height: 120px; overflow-y: auto; color: var(--accent-cyan);"></pre>
+        <pre id="modalDetails" style="max-height: 120px; overflow-y: auto; color: var(--text-secondary); margin-top: 4px;"></pre>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
-        <button class="btn-secondary" onclick="rejectAction()">REJECT</button>
-        <button class="btn-primary" onclick="approveAction()">APPROVE & CONTINUE</button>
+        <button class="btn-secondary" onclick="rejectAction()">REJECT ACTION</button>
+        <button class="btn-primary" onclick="approveAction()">APPROVE & EXECUTE</button>
       </div>
     </div>
   </div>
@@ -346,4 +587,3 @@
   <script src="/static/js/app.js"></script>
 </body>
 </html>
-

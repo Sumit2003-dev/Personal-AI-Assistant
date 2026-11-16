@@ -12,8 +12,9 @@ sam/data/screenshots/
 sam/data/video_exports/
 sam/data/workspaces/
 sam/data/*.wav
-sam/data/reports/*.pdf
-sam/logs/*.jsonl
+sam/data/*.db
+sam/data/reports/
+sam/logs/
 *.log
 
 # OS / Editor
