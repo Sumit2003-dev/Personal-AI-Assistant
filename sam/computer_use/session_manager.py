@@ -65,6 +65,10 @@ class ComputerUseSessionManager:
     def active_session(self) -> Optional[str]:
         return self._active_session_id
 
+    @property
+    def active_session_id(self) -> Optional[str]:
+        return self._active_session_id
+
 
 session_manager = ComputerUseSessionManager()
 

@@ -208,6 +208,54 @@ class VideoPipeline:
             "status": "Verified 1080p vertical video export" if verified else "Resolution mismatch",
         }
 
+    def trim_clip(
+        self,
+        start_sec: float = 0.0,
+        end_sec: float = 2.0,
+        input_path: str | Path | None = None,
+        output_filename: str | None = None,
+    ) -> Dict[str, Any]:
+        """Trims a section of source video to a dedicated export file, preserving original source."""
+        if not input_path or not Path(input_path).exists():
+            src = self.generate_demo_source_if_needed()
+        else:
+            src = Path(input_path)
+
+        out_name = output_filename or f"sam_trimmed_{int(time.time())}.mp4"
+        out_path = self.exports_dir / out_name
+
+        cap = cv2.VideoCapture(str(src))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
+
+        start_frame = int(start_sec * fps)
+        end_frame = int(end_sec * fps)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+        current_frame = start_frame
+        frames_written = 0
+        while cap.isOpened() and current_frame <= end_frame:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            writer.write(frame)
+            frames_written += 1
+            current_frame += 1
+
+        cap.release()
+        writer.release()
+
+        return {
+            "success": True,
+            "source_preserved": str(src),
+            "output_path": str(out_path),
+            "frames_written": frames_written,
+            "duration_seconds": round(frames_written / fps, 2),
+        }
+
 
 video_pipeline = VideoPipeline()
 
@@ -270,10 +318,21 @@ class VerifyExportTool(BaseTool):
         return ToolResult(success=res.get("verified", False), output=res)
 
 
+class VideoTrimClipTool(BaseTool):
+    name = "video_trim_clip"
+    description = "Trims a segment of footage to a dedicated export file without overwriting original source."
+    risk_level = RiskLevel.MEDIUM
+
+    def execute(self, start_sec: float = 0.0, end_sec: float = 2.0, input_path: str = "", **kwargs: Any) -> ToolResult:
+        res = video_pipeline.trim_clip(start_sec=start_sec, end_sec=end_sec, input_path=input_path)
+        return ToolResult(success=res["success"], output=res, artifacts=[res["output_path"]])
+
+
 # Register tools
 tool_registry.register(InspectMediaTool())
 tool_registry.register(ConfigureVideoPipelineTool())
 tool_registry.register(GenerateSubtitlesTool())
 tool_registry.register(ExportRenderTool())
 tool_registry.register(VerifyExportTool())
+tool_registry.register(VideoTrimClipTool())
 

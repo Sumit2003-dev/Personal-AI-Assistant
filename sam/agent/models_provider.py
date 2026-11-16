@@ -118,7 +118,12 @@ class ModelManager:
             ),
         }
 
-    def generate_plan(self, objective: str, tools_schema: List[Dict[str, Any]]) -> Optional[tuple[str, str]]:
+    def generate_plan(
+        self,
+        objective: str,
+        tools_schema: List[Dict[str, Any]],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Optional[tuple[str, str]]:
         """Requests a task plan from the local LLM if online. Returns (raw_plan, model_name)."""
         if not self.is_available():
             logger.warning("Cannot generate LLM plan: Ollama is offline.")
@@ -129,8 +134,21 @@ class ModelManager:
         planning_model = "qwen2.5:3b" if any("qwen2.5:3b" in m for m in available) else self.ollama.model
 
         tool_names = [t["name"] for t in tools_schema]
+
+        context_blocks = []
+        if context:
+            if context.get("retrieved_memories"):
+                m_lines = [f"- {m.get('key')}: {m.get('value')}" for m in context["retrieved_memories"][:5]]
+                context_blocks.append("Stored Preferences & Context:\n" + "\n".join(m_lines))
+            if context.get("recent_history"):
+                h_lines = [f"- {msg.get('role')}: {msg.get('content')}" for msg in context["recent_history"][-3:]]
+                context_blocks.append("Recent Conversation History:\n" + "\n".join(h_lines))
+
+        ctx_prompt = ("\n\n" + "\n\n".join(context_blocks)) if context_blocks else ""
+
         prompt = (
             f"Objective: {objective}\n"
+            f"{ctx_prompt}\n"
             f"Available tools: {tool_names}\n"
             f"Decompose this objective into an ordered JSON list of step objects.\n"
             f"Format example:\n"
@@ -148,6 +166,37 @@ class ModelManager:
             return (raw, planning_model) if raw else None
         except Exception as e:
             logger.error(f"LLM plan generation failed: {e}")
+            return None
+
+    def generate_chat_reply(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        memories: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[str]:
+        """Generates a direct conversational response using the local model."""
+        if not self.is_available():
+            return None
+        available = self.ollama.list_available_models()
+        chat_model = "qwen2.5:3b" if any("qwen2.5:3b" in m for m in available) else self.ollama.model
+
+        context_lines = []
+        if memories:
+            m_items = [f"- {m.get('key')}: {m.get('value')}" for m in memories[:5]]
+            context_lines.append("User Memory & Context:\n" + "\n".join(m_items))
+        if history:
+            h_items = [f"{m.get('role').capitalize()}: {m.get('content')}" for m in history[-4:]]
+            context_lines.append("Recent Conversation:\n" + "\n".join(h_items))
+
+        prompt_body = "\n\n".join(context_lines) + f"\n\nUser: {message}\nAssistant:" if context_lines else message
+        system_prompt = (
+            "You are SAM, an intelligent personal AI workstation assistant for Windows 11 on an HP OMEN 16. "
+            "Provide helpful, concise, professional assistance."
+        )
+        try:
+            return self.ollama.generate(prompt_body, system_prompt=system_prompt, model=chat_model, max_tokens=300)
+        except Exception as e:
+            logger.error(f"Chat generation failed: {e}")
             return None
 
 

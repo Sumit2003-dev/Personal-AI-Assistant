@@ -9,6 +9,8 @@ import subprocess
 import os
 import sys
 import time
+import shutil
+import re
 from sam.tools.base import BaseTool, ToolResult
 from sam.agent.models import RiskLevel
 from sam.tools.registry import tool_registry
@@ -51,9 +53,23 @@ class CodingAgent:
         if ws not in target.parents and target != ws:
             raise PermissionError("Path traversal outside workspace is blocked.")
         target.parent.mkdir(parents=True, exist_ok=True)
+        # Checkpoint original if file already exists
+        if target.exists():
+            backup_path = target.with_name(f"{target.name}.bak")
+            shutil.copy2(target, backup_path)
         with open(target, "w", encoding="utf-8") as f:
             f.write(content)
         return target
+
+    def rollback_file(self, workspace_name: str, rel_path: str) -> bool:
+        """Restores a file to its checkpoint backup (.bak) if available."""
+        ws = self.get_workspace_dir(workspace_name)
+        target = (ws / rel_path).resolve()
+        backup_path = target.with_name(f"{target.name}.bak")
+        if not backup_path.exists():
+            return False
+        shutil.copy2(backup_path, target)
+        return True
 
     def read_file(self, workspace_name: str, rel_path: str) -> str:
         ws = self.get_workspace_dir(workspace_name)
@@ -79,6 +95,7 @@ class CodingAgent:
                 "error": f"Script '{script_rel_path}' not found.",
                 "stdout": "",
                 "stderr": "",
+                "diagnostics": {"error_type": "FileNotFound", "details": f"Script '{script_rel_path}' not found."},
             }
 
         cmd = [sys.executable, str(script_path)] + (args or [])
@@ -92,12 +109,25 @@ class CodingAgent:
                 timeout=timeout,
             )
             duration = round(time.time() - start_t, 3)
+            diagnostics = {}
+            if res.returncode != 0 and res.stderr:
+                lines = res.stderr.strip().splitlines()
+                error_line = lines[-1] if lines else "Unknown runtime error"
+                failing_line = next((l.strip() for l in reversed(lines) if "File " in l and "line " in l), None)
+                diagnostics = {
+                    "error_type": error_line.split(":")[0] if ":" in error_line else "RuntimeError",
+                    "error_message": error_line,
+                    "failing_location": failing_line,
+                    "stack_depth": sum(1 for l in lines if "File " in l),
+                }
+
             return {
                 "success": res.returncode == 0,
                 "exit_code": res.returncode,
                 "stdout": res.stdout,
                 "stderr": res.stderr,
                 "duration_s": duration,
+                "diagnostics": diagnostics,
             }
         except subprocess.TimeoutExpired:
             return {
@@ -106,6 +136,34 @@ class CodingAgent:
                 "error": f"Script timed out after {timeout} seconds.",
                 "stdout": "",
                 "stderr": "",
+                "diagnostics": {"error_type": "TimeoutExpired"},
+            }
+
+    def run_tests(self, workspace_name: str, test_pattern: str = "test*.py") -> Dict[str, Any]:
+        """Runs unit tests inside the workspace and captures results."""
+        ws = self.get_workspace_dir(workspace_name)
+        cmd = [sys.executable, "-m", "unittest", "discover", "-s", ".", "-p", test_pattern]
+        start_t = time.time()
+        try:
+            res = subprocess.run(cmd, cwd=str(ws), capture_output=True, text=True, timeout=30.0)
+            duration = round(time.time() - start_t, 3)
+            return {
+                "success": res.returncode == 0,
+                "exit_code": res.returncode,
+                "stdout": res.stdout,
+                "stderr": res.stderr,
+                "tests_passed": res.returncode == 0,
+                "duration_s": duration,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "exit_code": -1,
+                "error": str(e),
+                "stdout": "",
+                "stderr": str(e),
+                "tests_passed": False,
+                "duration_s": 0.0,
             }
 
 
@@ -195,10 +253,38 @@ class VerifyCodingResultsTool(BaseTool):
         )
 
 
+class RollbackCodeFileTool(BaseTool):
+    name = "coding_rollback_file"
+    description = "Restores a source code file to its previous checkpoint backup (.bak)."
+    risk_level = RiskLevel.MEDIUM
+
+    def execute(self, filename: str, workspace_name: str = "default_project", **kwargs: Any) -> ToolResult:
+        success = coding_agent.rollback_file(workspace_name, filename)
+        if success:
+            return ToolResult(success=True, output=f"Successfully rolled back '{filename}' from checkpoint.")
+        return ToolResult(success=False, error=f"No backup checkpoint found for '{filename}'.")
+
+
+class RunTestsTool(BaseTool):
+    name = "coding_run_tests"
+    description = "Discovers and executes automated unit tests inside the workspace."
+    risk_level = RiskLevel.LOW
+
+    def execute(self, pattern: str = "test*.py", workspace_name: str = "default_project", **kwargs: Any) -> ToolResult:
+        res = coding_agent.run_tests(workspace_name, pattern)
+        return ToolResult(
+            success=res["tests_passed"],
+            output=res,
+            error=res.get("stderr") if not res["tests_passed"] else None,
+        )
+
+
 # Register tools
 tool_registry.register(InspectWorkspaceTool())
 tool_registry.register(WriteCodeFileTool())
 tool_registry.register(ReadCodeFileTool())
 tool_registry.register(RunScriptTool())
 tool_registry.register(VerifyCodingResultsTool())
+tool_registry.register(RollbackCodeFileTool())
+tool_registry.register(RunTestsTool())
 

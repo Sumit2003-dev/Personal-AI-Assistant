@@ -21,6 +21,7 @@ from sam.agent.models import (
 )
 from sam.tools.registry import tool_registry
 from sam.agent.models_provider import model_manager
+from sam.memory.sqlite_memory import memory_store
 from sam.config.settings import settings
 
 logger = logging.getLogger("sam.planner")
@@ -42,15 +43,41 @@ class TaskPlanner:
             context_data=context,
         )
 
-        # 1. Check if deterministic schema is explicitly requested via context
+        # 1. Retrieve relevant memories and conversation context
+        retrieved_memories = []
+        try:
+            tokens = [t.lower() for t in re.findall(r"\w+", objective_clean) if len(t) > 3][:4]
+            seen_keys = set()
+            for token in tokens:
+                for item in memory_store.search_memories(token):
+                    if item["key"] not in seen_keys:
+                        seen_keys.add(item["key"])
+                        retrieved_memories.append(item)
+            for pref in memory_store.search_memories("preference"):
+                if pref["key"] not in seen_keys:
+                    seen_keys.add(pref["key"])
+                    retrieved_memories.append(pref)
+        except Exception as e:
+            logger.debug(f"Memory retrieval in planner non-fatal error: {e}")
+
+        recent_history = []
+        try:
+            recent_history = memory_store.get_recent_messages(limit=5)
+        except Exception as e:
+            logger.debug(f"Recent history retrieval non-fatal error: {e}")
+
+        task.context_data.setdefault("retrieved_memories", retrieved_memories)
+        task.context_data.setdefault("recent_history", recent_history)
+
+        # 2. Check if deterministic schema is explicitly requested via context
         use_deterministic = context.get("deterministic", False)
 
-        # 2. Attempt LLM Planning if local model is online and not forced deterministic
+        # 3. Attempt LLM Planning if local model is online and not forced deterministic
         steps = None
         if not use_deterministic and self.model_manager.is_available():
-            logger.info("Local LLM runtime is ONLINE. Requesting plan from local model...")
+            logger.info("Local LLM runtime is ONLINE. Requesting plan from local model with context & memory...")
             tools_catalog = tool_registry.list_tools()
-            res = self.model_manager.generate_plan(objective_clean, tools_catalog)
+            res = self.model_manager.generate_plan(objective_clean, tools_catalog, context=task.context_data)
             if res:
                 llm_response, model_used = res
                 steps = self._parse_llm_plan(llm_response)
@@ -59,7 +86,7 @@ class TaskPlanner:
                     task.context_data["llm_used"] = True
                     logger.info(f"Successfully generated task plan using local LLM ({len(steps)} steps via {model_used}).")
 
-        # 3. Transparent fallback when local LLM is offline or deterministic mode is active
+        # 4. Transparent fallback when local LLM is offline or deterministic mode is active
         if not steps:
             if not use_deterministic:
                 task.context_data["planned_by"] = "DETERMINISTIC_SCHEMA_FALLBACK"

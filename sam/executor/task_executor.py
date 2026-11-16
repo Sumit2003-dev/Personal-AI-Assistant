@@ -20,6 +20,7 @@ from sam.agent.models import (
 from sam.tools.registry import tool_registry
 from sam.security.permissions import security_gatekeeper, EmergencyStopActiveError
 from sam.security.audit import audit_logger
+from sam.computer_use.session_manager import session_manager, ComputerUseSessionConflictError
 from sam.config.settings import settings
 
 logger = logging.getLogger("sam.executor")
@@ -32,6 +33,14 @@ class TaskExecutor:
         self._active_tasks: dict[str, Task] = {}
         self._observer_func: Optional[Callable[[], Observation]] = None
         self._progress_callbacks: list[Callable[[Task], None]] = []
+
+        # Wire real Windows desktop screen observer by default
+        try:
+            from sam.computer_use.operator import computer_operator
+            self.register_observer(computer_operator.observe_state)
+            logger.info("Successfully registered computer_operator.observe_state as desktop observer.")
+        except Exception as e:
+            logger.debug(f"Default observer deferred: {e}")
 
     def register_observer(self, func: Callable[[], Observation]):
         self._observer_func = func
@@ -73,126 +82,158 @@ class TaskExecutor:
             details={"objective": task.objective, "total_steps": len(task.steps)}
         )
 
-        while task.current_step_index < len(task.steps):
-            if security_gatekeeper.is_emergency_stop_active:
-                task.status = TaskStatus.STOPPED
-                task.error_details = "Emergency stop activated by user. Task halted."
-                self._notify_progress(task)
-                return task
-
-            if task.status == TaskStatus.PAUSED:
-                logger.info(f"Task {task.task_id} is paused.")
-                self._notify_progress(task)
-                return task
-
-            step = task.steps[task.current_step_index]
-            step.status = StepStatus.RUNNING
-            self._notify_progress(task)
-
-            # Security gate evaluation
-            can_execute, reason = security_gatekeeper.evaluate_action(
-                action_name=f"{step.tool_name}",
-                risk_level=step.risk_level,
-                details=step.tool_args,
-                task_id=task.task_id,
-            )
-
-            if not can_execute:
-                if step.risk_level == RiskLevel.HIGH or settings.security.require_confirmation_medium_risk:
-                    task.status = TaskStatus.WAITING_APPROVAL
-                    task.requires_approval = True
-                    task.pending_approval_step = step
-                    step.status = StepStatus.WAITING_APPROVAL
-                    self._notify_progress(task)
-                    logger.info(f"Task {task.task_id} waiting for user approval on step: {step.title}")
-                    return task
-                else:
-                    step.status = StepStatus.FAILED
-                    step.error = reason
-                    task.status = TaskStatus.FAILED
-                    task.error_details = reason
-                    self._notify_progress(task)
-                    return task
-
-            # 1. OBSERVE (Before)
-            step.observation_before = self.capture_observation()
-
-            # 2. ACT (Tool Execution)
-            tool_call = ToolCall(
-                tool_name=step.tool_name,
-                args=step.tool_args,
-                risk_level=step.risk_level,
-                executed_at=time.time(),
-            )
-            step.tool_call = tool_call
-
+        has_computer_steps = any(
+            step.tool_name.startswith("computer_") or "mouse" in step.tool_name or "keyboard" in step.tool_name
+            for step in task.steps
+        )
+        acquired_session = False
+        if has_computer_steps:
             try:
-                result = tool_registry.execute_tool(step.tool_name, step.tool_args)
-                tool_call.success = result.success
-                tool_call.output = result.output
-                tool_call.error = result.error
-                if result.artifacts:
-                    task.artifacts.extend(result.artifacts)
-            except Exception as e:
-                tool_call.success = False
-                tool_call.error = str(e)
-                result = None
+                session_manager.acquire(task.task_id, timeout=2.0)
+                acquired_session = True
+            except ComputerUseSessionConflictError as e:
+                task.status = TaskStatus.FAILED
+                task.error_details = f"Cannot execute desktop task: concurrent session in progress ({e})"
+                self._notify_progress(task)
+                return task
 
-            # 3. OBSERVE (After)
-            step.observation_after = self.capture_observation()
+        try:
+            while task.current_step_index < len(task.steps):
+                if security_gatekeeper.is_emergency_stop_active:
+                    task.status = TaskStatus.STOPPED
+                    task.error_details = "Emergency stop activated by user. Task halted."
+                    self._notify_progress(task)
+                    return task
 
-            # 4. VERIFY
-            step_success = tool_call.success
-            verification = VerificationResult(
-                verified=step_success,
-                criteria=step.verification_criteria,
-                details="Action executed and verified." if step_success else f"Action failed: {tool_call.error}",
+                if task.status == TaskStatus.PAUSED:
+                    logger.info(f"Task {task.task_id} is paused.")
+                    self._notify_progress(task)
+                    return task
+
+                step = task.steps[task.current_step_index]
+                step.status = StepStatus.RUNNING
+                self._notify_progress(task)
+
+                # Security gate evaluation
+                can_execute, reason = security_gatekeeper.evaluate_action(
+                    action_name=f"{step.tool_name}",
+                    risk_level=step.risk_level,
+                    details=step.tool_args,
+                    task_id=task.task_id,
+                )
+
+                if not can_execute:
+                    if step.risk_level == RiskLevel.HIGH or settings.security.require_confirmation_medium_risk:
+                        task.status = TaskStatus.WAITING_APPROVAL
+                        task.requires_approval = True
+                        task.pending_approval_step = step
+                        step.status = StepStatus.WAITING_APPROVAL
+                        self._notify_progress(task)
+                        logger.info(f"Task {task.task_id} waiting for user approval on step: {step.title}")
+                        return task
+                    else:
+                        step.status = StepStatus.FAILED
+                        step.error = reason
+                        task.status = TaskStatus.FAILED
+                        task.error_details = reason
+                        self._notify_progress(task)
+                        return task
+
+                # 1. OBSERVE (Before)
+                step.observation_before = self.capture_observation()
+
+                # 2. ACT (Tool Execution)
+                tool_call = ToolCall(
+                    tool_name=step.tool_name,
+                    args=step.tool_args,
+                    risk_level=step.risk_level,
+                    executed_at=time.time(),
+                )
+                step.tool_call = tool_call
+
+                try:
+                    result = tool_registry.execute_tool(step.tool_name, step.tool_args)
+                    tool_call.success = result.success
+                    tool_call.output = result.output
+                    tool_call.error = result.error
+                    if result.artifacts:
+                        task.artifacts.extend(result.artifacts)
+                except Exception as e:
+                    tool_call.success = False
+                    tool_call.error = str(e)
+                    result = None
+
+                # 3. OBSERVE (After)
+                step.observation_after = self.capture_observation()
+
+                # 4. VERIFY
+                step_success = tool_call.success
+
+                # Step-level visual verification
+                visual_change_detected = False
+                if step.observation_before and step.observation_after:
+                    v1 = step.observation_before.visual_hash
+                    v2 = step.observation_after.visual_hash
+                    if v1 and v2 and v1 != v2:
+                        visual_change_detected = True
+
+                details_msg = "Action executed and verified." if step_success else f"Action failed: {tool_call.error}"
+                if visual_change_detected:
+                    details_msg += " (Visual state change confirmed)"
+
+                verification = VerificationResult(
+                    verified=step_success,
+                    criteria=step.verification_criteria,
+                    details=details_msg,
+                    artifacts=task.artifacts.copy(),
+                )
+                step.verification_result = verification
+
+                if step_success:
+                    step.status = StepStatus.COMPLETED
+                    task.current_step_index += 1
+                    task.updated_at = time.time()
+                    self._notify_progress(task)
+                else:
+                    # Error recovery and retry handling
+                    if step.retries < step.max_retries:
+                        step.retries += 1
+                        logger.warning(
+                            f"Step {step.step_id} failed. Attempting retry {step.retries}/{step.max_retries}..."
+                        )
+                        time.sleep(0.5)
+                        continue  # Retry same step
+                    else:
+                        step.status = StepStatus.FAILED
+                        step.error = tool_call.error or "Step verification failed."
+                        task.status = TaskStatus.FAILED
+                        task.error_details = f"Failed at step '{step.title}': {step.error}"
+                        self._notify_progress(task)
+                        return task
+
+            # Final Task Verification
+            task.status = TaskStatus.COMPLETED
+            task.completed_at = time.time()
+            task.verification_result = VerificationResult(
+                verified=True,
+                criteria="All planned task steps executed and verified.",
+                details=f"Task completed successfully with {len(task.steps)} verified steps.",
                 artifacts=task.artifacts.copy(),
             )
-            step.verification_result = verification
+            self._notify_progress(task)
 
-            if step_success:
-                step.status = StepStatus.COMPLETED
-                task.current_step_index += 1
-                task.updated_at = time.time()
-                self._notify_progress(task)
-            else:
-                # Error recovery and retry handling
-                if step.retries < step.max_retries:
-                    step.retries += 1
-                    logger.warning(
-                        f"Step {step.step_id} failed. Attempting retry {step.retries}/{step.max_retries}..."
-                    )
-                    time.sleep(0.5)
-                    continue  # Retry same step
-                else:
-                    step.status = StepStatus.FAILED
-                    step.error = tool_call.error or "Step verification failed."
-                    task.status = TaskStatus.FAILED
-                    task.error_details = f"Failed at step '{step.title}': {step.error}"
-                    self._notify_progress(task)
-                    return task
-
-        # Final Task Verification
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = time.time()
-        task.verification_result = VerificationResult(
-            verified=True,
-            criteria="All planned task steps executed and verified.",
-            details=f"Task completed successfully with {len(task.steps)} verified steps.",
-            artifacts=task.artifacts.copy(),
-        )
-        self._notify_progress(task)
-
-        audit_logger.log_event(
-            event_type="TASK_COMPLETE",
-            action="FINISH_TASK",
-            risk_level="LOW",
-            status="COMPLETED",
-            task_id=task.task_id,
-            details={"artifacts": task.artifacts}
-        )
-        return task
+            audit_logger.log_event(
+                event_type="TASK_COMPLETE",
+                action="FINISH_TASK",
+                risk_level="LOW",
+                status="COMPLETED",
+                task_id=task.task_id,
+                details={"artifacts": task.artifacts}
+            )
+            return task
+        finally:
+            if acquired_session:
+                session_manager.release(task.task_id)
 
     async def execute_task_async(self, task: Task) -> Task:
         """Asynchronous execution bridge for background event loops."""
@@ -236,6 +277,7 @@ class TaskExecutor:
         task = self._active_tasks.get(task_id)
         if task and task.status == TaskStatus.RUNNING:
             task.status = TaskStatus.PAUSED
+            session_manager.pause()
             self._notify_progress(task)
             return True
         return False
@@ -244,6 +286,7 @@ class TaskExecutor:
         task = self._active_tasks.get(task_id)
         if task and task.status == TaskStatus.PAUSED:
             task.status = TaskStatus.RUNNING
+            session_manager.resume()
             self._notify_progress(task)
             return True
         return False
@@ -253,6 +296,7 @@ class TaskExecutor:
         if task:
             task.status = TaskStatus.STOPPED
             task.error_details = "Task stopped by user request."
+            session_manager.release(task_id)
             self._notify_progress(task)
             return True
         return False

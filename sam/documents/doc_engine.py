@@ -126,6 +126,28 @@ class DocumentEngine:
             f.write(content)
         return out_path
 
+    def export_analysis(self, file_path: str | Path | None = None, format: str = "md") -> Path:
+        """Analyzes a source file and writes an executive report while preserving original file."""
+        doc = self.read_document(file_path)
+        summary = self.summarize_content(doc["extracted_text"])
+        stem = Path(doc["filename"]).stem
+        out_filename = f"analysis_{stem}_{int(time.time())}.{format}"
+        out_path = self.reports_dir / out_filename
+        body = (
+            f"# Document Analysis: {doc['filename']}\n\n"
+            f"- File Path: {doc['file_path']}\n"
+            f"- Format: {doc['format']}\n"
+            f"- Total Characters: {doc['total_chars']}\n\n"
+            f"## Summary\n\n"
+            f"{summary['summary']}\n\n"
+            f"## Key Takeaways\n\n"
+            + "\n".join(f"- {kp}" for kp in summary.get("key_points", []))
+            + "\n\n*Original source document preserved untouched.*"
+        )
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(body)
+        return out_path
+
 
 document_engine = DocumentEngine()
 
@@ -164,7 +186,18 @@ class DocumentCreateReportTool(BaseTool):
         return ToolResult(success=True, output=f"Report created at: {path}", artifacts=[str(path)])
 
 
+class DocumentExportAnalysisTool(BaseTool):
+    name = "document_export_analysis"
+    description = "Exports a complete analysis of a document to markdown without modifying original source."
+    risk_level = RiskLevel.LOW
+
+    def execute(self, file_path: str = "", format: str = "md", **kwargs: Any) -> ToolResult:
+        path = document_engine.export_analysis(file_path=file_path, format=format)
+        return ToolResult(success=True, output=f"Analysis exported to: {path}", artifacts=[str(path)])
+
+
 tool_registry.register(DocumentReadTool())
 tool_registry.register(DocumentSummarizeTool())
 tool_registry.register(DocumentCreateReportTool())
+tool_registry.register(DocumentExportAnalysisTool())
 

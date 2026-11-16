@@ -81,6 +81,30 @@ class DocumentSummarizeRequest(BaseModel):
     workspace: str
     filename: str
 
+class CodingRollbackRequest(BaseModel):
+    workspace: str = "default_project"
+    filename: str
+
+class CodingTestRequest(BaseModel):
+    workspace: str = "default_project"
+    pattern: str = "test*.py"
+
+class BrowserSearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+class BrowserLinksRequest(BaseModel):
+    url: str
+
+class BrowserSubmitRequest(BaseModel):
+    url: str
+    form_data: Dict[str, Any] = {}
+    method: str = "POST"
+
+class DocumentExportRequest(BaseModel):
+    file_path: Optional[str] = None
+    format: str = "md"
+
 class MemoryCreateRequest(BaseModel):
     category: str
     key: str
@@ -368,6 +392,18 @@ async def run_coding_script(req: CodeRunRequest):
     res = coding_agent.run_script(req.workspace, req.filename, args=req.args)
     return JSONResponse(res)
 
+@app.post("/api/coding/rollback")
+async def rollback_coding_file(req: CodingRollbackRequest):
+    success = coding_agent.rollback_file(req.workspace, req.filename)
+    if success:
+        return JSONResponse({"success": True, "message": f"Successfully rolled back {req.filename} from checkpoint."})
+    return JSONResponse({"success": False, "error": f"No checkpoint backup found for {req.filename}"}, status_code=404)
+
+@app.post("/api/coding/test")
+async def run_coding_tests(req: CodingTestRequest):
+    res = coding_agent.run_tests(req.workspace, req.pattern)
+    return JSONResponse(res)
+
 
 # ---------------------------------------------------------
 # Video Editor Workspace
@@ -412,6 +448,22 @@ async def browser_research(req: BrowserResearchRequest):
         "content_sample": res.get("content_sample", "")
     })
 
+@app.post("/api/browser/search")
+async def browser_search(req: BrowserSearchRequest):
+    res = browser_agent.search_web(req.query, req.max_results)
+    return JSONResponse(res)
+
+@app.post("/api/browser/links")
+async def browser_links(req: BrowserLinksRequest):
+    res = browser_agent.extract_links(req.url)
+    return JSONResponse(res)
+
+@app.post("/api/browser/submit")
+async def browser_submit(req: BrowserSubmitRequest):
+    res = browser_agent.submit_form(req.url, req.form_data, req.method)
+    status_code = 403 if res.get("requires_approval") else (200 if res.get("success") else 400)
+    return JSONResponse(res, status_code=status_code)
+
 
 # ---------------------------------------------------------
 # Document Intelligence & File Explorer
@@ -448,6 +500,11 @@ async def upload_document(file: UploadFile = File(...), workspace: str = Form("d
     with open(dest, "wb") as f:
         f.write(content)
     return JSONResponse({"success": True, "filename": file.filename, "size_bytes": len(content)})
+
+@app.post("/api/documents/export")
+async def export_document_analysis(req: DocumentExportRequest):
+    path = document_engine.export_analysis(req.file_path, req.format)
+    return JSONResponse({"success": True, "exported_path": str(path)})
 
 
 # ---------------------------------------------------------

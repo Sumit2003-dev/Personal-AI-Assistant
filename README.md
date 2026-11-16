@@ -143,18 +143,69 @@ SAM implements a strict three-tier risk model:
 
 ---
 
-## 6. How to Launch and Test SAM
+## 6. Phase 6 Agent Integration & Architecture
 
-### Run the Automated Test Suite:
+Phase 6 connects the desktop interface and autonomous planner with fully integrated, production-grade specialized agents:
+
+1. **AI Orchestration & Long-Term Memory Injection**
+   - Natural language goals automatically query `memory_store` for relevant personal facts, preferences, and recent chat history.
+   - Context is injected directly into local LLM (`qwen2.5:3b` / `qwen3:4b`) prompts for structured JSON plan generation.
+   - Tasks execute via an Observe-Plan-Act-Verify cycle with progress callbacks and audit logging.
+
+2. **Computer-Use Agent & Session Mutex**
+   - Integrates real Windows desktop screen capture (`screen_observer`), active window focus tracking (`window_manager`), and mouse/keyboard controllers.
+   - Enforces a thread-safe `session_manager` mutex ensuring only one desktop automation holds control at a time.
+   - Compares pre- and post-action visual perceptual hashes (`dHash`) to verify visual state changes on GUI interactions.
+
+3. **Coding Agent with Checkpoints & Diagnostics**
+   - Safely creates and edits files in isolated workspaces with path traversal prevention.
+   - **Automatic Checkpointing:** Overwriting an existing file automatically creates a `.bak` backup copy.
+   - **Rollback Tool:** Instantly restores original source files from `.bak` checkpoints (`coding_rollback_file`).
+   - **Traceback Diagnostics:** Parses Python runtime tracebacks to extract failing line numbers, exception types, and stack frame depths.
+   - **Test Runner:** Discovers and runs automated unit tests (`coding_run_tests`).
+
+4. **Browser Autonomy Engine & Submission Security**
+   - Discovers installed browsers (Edge, Chrome) via Windows Application Registry.
+   - Structured search (`browser_search`) extracts titles, snippets, and clean target URLs.
+   - Link extraction (`browser_extract_links`) parses navigable anchors on web pages.
+   - **External Submission Gating:** Form submissions and HTTP POST requests (`browser_submit_form`) are marked **HIGH RISK** and require explicit user confirmation through the security gatekeeper before dispatch.
+
+5. **Document Intelligence Engine**
+   - Parses PDF (`pypdf`), DOCX (`docx`), and spreadsheets/tabular data (`pandas` XLSX, CSV).
+   - Strict read-only mode (`"rb"`, `"r"`) guarantees original source files are never altered or overwritten.
+   - Exports executive analysis reports to dedicated report directories (`document_export_analysis`).
+
+6. **Video Editing Pipeline (Non-Destructive)**
+   - Renders 9:16 vertical 1080p clips (`1080x1920`) with OpenCV and FFmpeg backends.
+   - Generates synchronized subtitles and burned-in captions.
+   - Trims source clips (`video_trim_clip`) while strictly preserving original footage in dedicated export folders (`sam/data/video_exports`).
+
+7. **Security Gatekeeper & Emergency Stop**
+   - Centralized risk gating across all agents (LOW, MEDIUM, HIGH).
+   - Global emergency stop halts active tasks immediately and releases all computer-use session locks.
+   - Task lifecycle controls: Pause, Resume, Stop/Cancel, Approve, and Reject.
+
+---
+
+## 7. How to Launch and Test SAM
+
+### Run the Full Verification Suite (49 Automated Tests):
 ```powershell
+# 1. Run Core System & Acceptance Suite (25 tests):
 python -m unittest sam.tests.test_suite -v
+
+# 2. Run Phase 6 Agent Integrations Suite (13 tests):
+python -m unittest sam.tests.test_agent_integrations -v
+
+# 3. Run Desktop Web API Suite (11 tests):
+python -m unittest sam.tests.test_desktop_api -v
 ```
 
-### Launch the Desktop Interface:
+### Launch the Interactive Desktop Workstation:
 ```powershell
 python -m sam.app.main --mode desktop --port 8765
 ```
-Open your browser or web app window to: `http://127.0.0.1:8765`
+Open your browser to: `http://127.0.0.1:8765`
 
 ### Query System Status via CLI:
 ```powershell
@@ -163,10 +214,10 @@ python -m sam.app.main --mode status
 
 ### Execute a Preset Workflow directly:
 ```powershell
-python -m sam.app.main --workflow A    # Coding
-python -m sam.app.main --workflow B    # Video Edit (1080p vertical)
-python -m sam.app.main --workflow C    # Browser Research
-python -m sam.app.main --workflow D    # Hardware Telemetry
-python -m sam.app.main --workflow E    # PDF Intelligence
+python -m sam.app.main --workflow A    # Coding Agent (Create, Run, Verify)
+python -m sam.app.main --workflow B    # Video Pipeline (1080p vertical edit)
+python -m sam.app.main --workflow C    # Browser Autonomy (Search & Extract)
+python -m sam.app.main --workflow D    # Hardware Telemetry (RTX 4050 / CPU / RAM / Disk)
+python -m sam.app.main --workflow E    # Document Intelligence (PDF Summarization)
 ```
 
