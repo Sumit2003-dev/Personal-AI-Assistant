@@ -20,18 +20,70 @@ from sam.security.permissions import security_gatekeeper
 DEFAULT_WORKSPACE_ROOT = settings.data_dir / "workspaces"
 DEFAULT_WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
 
+RESERVED_DEVICE_NAMES = {"con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "lpt1", "lpt2", "lpt3"}
+ILLEGAL_PATH_CHARS = set('<>:"|?*\0')
+
 
 class CodingAgent:
     """Manages coding workspaces, file edits, script execution, and test verification."""
 
     def __init__(self, workspace_root: Path | None = None):
-        self.workspace_root = workspace_root or DEFAULT_WORKSPACE_ROOT
+        self.workspace_root = (workspace_root or DEFAULT_WORKSPACE_ROOT).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
 
+    def sanitize_workspace_name(self, name: str) -> str:
+        """Sanitizes workspace folder name to strictly prevent directory traversal."""
+        trimmed = name.strip()
+        if ".." in trimmed or "/" in trimmed or "\\" in trimmed or ":" in trimmed:
+            raise PermissionError(f"Directory traversal characters prohibited in workspace name: '{name}'")
+        clean = re.sub(r"[^a-zA-Z0-9_\-]", "", trimmed)
+        if not clean or clean in [".", ".."]:
+            raise PermissionError(f"Invalid or unsafe workspace name: '{name}'")
+        return clean
+
     def get_workspace_dir(self, name: str) -> Path:
-        ws = (self.workspace_root / name).resolve()
+        clean_name = self.sanitize_workspace_name(name)
+        ws = (self.workspace_root / clean_name).resolve()
+        if self.workspace_root not in ws.parents and ws != self.workspace_root:
+            raise PermissionError(f"Workspace traversal blocked: '{name}'")
         ws.mkdir(parents=True, exist_ok=True)
         return ws
+
+    def resolve_safe_path(self, workspace_name: str, rel_path: str, must_exist: bool = False) -> Path:
+        """
+        Validates and resolves a file path strictly within the approved workspace.
+        Blocks path traversal, absolute drive paths, Windows reserved device names, and symlink escapes.
+        """
+        ws = self.get_workspace_dir(workspace_name)
+        clean_p = rel_path.strip().replace("\\", "/")
+
+        if not clean_p or clean_p.startswith("/") or re.match(r"^[a-zA-Z]:", clean_p):
+            raise PermissionError(f"Path traversal or absolute path prohibited: '{rel_path}'")
+
+        parts = Path(clean_p).parts
+        for part in parts:
+            if part in [".", ".."]:
+                raise PermissionError(f"Directory traversal operator '{part}' prohibited.")
+            stem = part.split(".")[0].lower()
+            if stem in RESERVED_DEVICE_NAMES:
+                raise PermissionError(f"Reserved device filename '{part}' is prohibited on Windows.")
+            if any(c in ILLEGAL_PATH_CHARS for c in part):
+                raise PermissionError(f"Filename contains illegal characters: '{part}'")
+
+        target = (ws / clean_p).resolve()
+
+        if ws not in target.parents and target != ws:
+            raise PermissionError(f"Path traversal outside workspace '{workspace_name}' blocked: '{rel_path}'")
+
+        if target.is_symlink():
+            real_target = target.resolve()
+            if ws not in real_target.parents and real_target != ws:
+                raise PermissionError(f"Symlink traversal outside workspace blocked: '{rel_path}'")
+
+        if must_exist and not target.exists():
+            raise FileNotFoundError(f"File '{rel_path}' does not exist in workspace '{workspace_name}'.")
+
+        return target
 
     def inspect_workspace(self, name: str) -> Dict[str, Any]:
         ws = self.get_workspace_dir(name)
@@ -47,11 +99,7 @@ class CodingAgent:
         }
 
     def write_file(self, workspace_name: str, rel_path: str, content: str) -> Path:
-        ws = self.get_workspace_dir(workspace_name)
-        target = (ws / rel_path).resolve()
-        # Security boundary check
-        if ws not in target.parents and target != ws:
-            raise PermissionError("Path traversal outside workspace is blocked.")
+        target = self.resolve_safe_path(workspace_name, rel_path, must_exist=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         # Checkpoint original if file already exists
         if target.exists():
@@ -63,19 +111,18 @@ class CodingAgent:
 
     def rollback_file(self, workspace_name: str, rel_path: str) -> bool:
         """Restores a file to its checkpoint backup (.bak) if available."""
-        ws = self.get_workspace_dir(workspace_name)
-        target = (ws / rel_path).resolve()
+        target = self.resolve_safe_path(workspace_name, rel_path, must_exist=True)
         backup_path = target.with_name(f"{target.name}.bak")
         if not backup_path.exists():
             return False
+        ws = self.get_workspace_dir(workspace_name)
+        if ws not in backup_path.resolve().parents and backup_path.resolve() != ws:
+            raise PermissionError("Rollback checkpoint resides outside workspace.")
         shutil.copy2(backup_path, target)
         return True
 
     def read_file(self, workspace_name: str, rel_path: str) -> str:
-        ws = self.get_workspace_dir(workspace_name)
-        target = (ws / rel_path).resolve()
-        if not target.exists():
-            raise FileNotFoundError(f"File '{rel_path}' does not exist in workspace '{workspace_name}'.")
+        target = self.resolve_safe_path(workspace_name, rel_path, must_exist=True)
         with open(target, "r", encoding="utf-8") as f:
             return f.read()
 
@@ -87,16 +134,7 @@ class CodingAgent:
         timeout: float = 30.0,
     ) -> Dict[str, Any]:
         ws = self.get_workspace_dir(workspace_name)
-        script_path = (ws / script_rel_path).resolve()
-        if not script_path.exists():
-            return {
-                "success": False,
-                "exit_code": -1,
-                "error": f"Script '{script_rel_path}' not found.",
-                "stdout": "",
-                "stderr": "",
-                "diagnostics": {"error_type": "FileNotFound", "details": f"Script '{script_rel_path}' not found."},
-            }
+        script_path = self.resolve_safe_path(workspace_name, script_rel_path, must_exist=True)
 
         cmd = [sys.executable, str(script_path)] + (args or [])
         start_t = time.time()
@@ -107,6 +145,8 @@ class CodingAgent:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
             )
             duration = round(time.time() - start_t, 3)
             diagnostics = {}
@@ -142,17 +182,32 @@ class CodingAgent:
     def run_tests(self, workspace_name: str, test_pattern: str = "test*.py") -> Dict[str, Any]:
         """Runs unit tests inside the workspace and captures results."""
         ws = self.get_workspace_dir(workspace_name)
-        cmd = [sys.executable, "-m", "unittest", "discover", "-s", ".", "-p", test_pattern]
+        if "/" in test_pattern or "\\" in test_pattern or ".." in test_pattern:
+            raise PermissionError(f"Invalid test discovery pattern: '{test_pattern}'")
+
+        cmd = [sys.executable, "-m", "unittest", "discover", "-s", str(ws), "-t", str(ws), "-p", test_pattern]
         start_t = time.time()
         try:
-            res = subprocess.run(cmd, cwd=str(ws), capture_output=True, text=True, timeout=30.0)
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(ws)
+            res = subprocess.run(
+                cmd,
+                cwd=str(ws),
+                capture_output=True,
+                text=True,
+                timeout=15.0,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+            )
             duration = round(time.time() - start_t, 3)
+            passed = res.returncode in [0, 5]
             return {
-                "success": res.returncode == 0,
+                "success": passed,
                 "exit_code": res.returncode,
                 "stdout": res.stdout,
                 "stderr": res.stderr,
-                "tests_passed": res.returncode == 0,
+                "tests_passed": res.returncode == 0 or (res.returncode == 5 and "Ran 0 tests" in res.stderr),
                 "duration_s": duration,
             }
         except Exception as e:

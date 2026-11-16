@@ -68,6 +68,12 @@ class VoiceConfig:
     stt_model: str = "faster-whisper-tiny.en"  # Low VRAM footprint
     tts_engine: str = "local"
     push_to_talk_key: str = "ctrl+space"
+    preferred_device_name: str = "boAt Airdopes 131"
+    silence_rms_threshold: float = 0.008
+    min_peak_amplitude: float = 0.025
+    clipping_threshold: float = 0.99
+    max_no_speech_prob: float = 0.45
+    min_avg_logprob: float = -1.1
 
 
 @dataclass

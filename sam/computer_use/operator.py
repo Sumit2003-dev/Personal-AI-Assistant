@@ -22,18 +22,33 @@ class ComputerOperator:
     """Coordinates input, window focus, and visual feedback."""
 
     def observe_state(self) -> Observation:
-        img, path = screen_observer.capture_fullscreen(save=True)
-        active_win = window_manager.get_foreground_window()
-        cur_x, cur_y = mouse_controller.get_position()
-        v_hash = screen_observer.compute_visual_hash(img)
-        return Observation(
-            timestamp=time.time(),
-            window_title=active_win.get("title", ""),
-            active_process=str(active_win.get("pid", "")),
-            screenshot_path=str(path) if path else None,
-            visual_hash=v_hash,
-            system_metrics={"cursor": {"x": cur_x, "y": cur_y}},
-        )
+        try:
+            img, path = screen_observer.capture_fullscreen(save=True)
+            active_win = window_manager.get_foreground_window()
+            cur_x, cur_y = mouse_controller.get_position()
+            v_hash = screen_observer.compute_visual_hash(img)
+            return Observation(
+                timestamp=time.time(),
+                window_title=active_win.get("title", ""),
+                active_process=str(active_win.get("pid", "")),
+                screenshot_path=str(path) if path else None,
+                visual_hash=v_hash,
+                system_metrics={"cursor": {"x": cur_x, "y": cur_y}},
+                success=True,
+                is_placeholder=False,
+            )
+        except Exception as e:
+            return Observation(
+                timestamp=time.time(),
+                window_title="",
+                active_process="",
+                screenshot_path=None,
+                visual_hash=None,
+                text_content=f"Desktop observation failed: {e}",
+                success=False,
+                is_placeholder=True,
+                error=str(e),
+            )
 
 
 computer_operator = ComputerOperator()

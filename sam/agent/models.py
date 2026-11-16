@@ -47,6 +47,9 @@ class Observation:
     visual_hash: Optional[str] = None
     text_content: Optional[str] = None
     system_metrics: dict[str, Any] = field(default_factory=dict)
+    success: bool = True
+    is_placeholder: bool = False
+    error: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -61,6 +64,7 @@ class ToolCall:
     executed_at: Optional[float] = None
     success: bool = False
     output: Any = None
+    artifacts: list[str] = field(default_factory=list)
     error: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:

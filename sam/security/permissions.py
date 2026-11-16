@@ -30,6 +30,11 @@ class SecurityGatekeeper:
 
     def trigger_emergency_stop(self, reason: str = "User initiated global emergency stop"):
         self._emergency_stop = True
+        try:
+            from sam.computer_use.session_manager import session_manager
+            session_manager.force_release()
+        except Exception:
+            pass
         audit_logger.log_event(
             event_type="EMERGENCY_STOP",
             action="TRIGGER_STOP",

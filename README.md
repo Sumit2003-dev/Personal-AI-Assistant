@@ -187,18 +187,50 @@ Phase 6 connects the desktop interface and autonomous planner with fully integra
 
 ---
 
-## 7. How to Launch and Test SAM
+## 7. Phase 6.1 Reliability, Safety & Integration Hardening
 
-### Run the Full Verification Suite (49 Automated Tests):
+Phase 6.1 resolves critical reliability, hardware safety, and security edge cases across all subsystems:
+
+1. **Voice Reliability & Microphone Safety Guardrails**
+   - **Persistent Device Memory:** Hardens `boAt Airdopes 131` as user-preferred device across system reboots and Bluetooth disconnects; prevents silent permanent fallback to Intel Smart Sound.
+   - **Pre-Transcription Quality Screening:** Computes RMS energy, peak amplitude, clipping ratio, and silence ratio before touching Whisper. Recordings below `rms < 0.008` or `peak < 0.025` are rejected upfront with explanatory diagnostic reasons.
+   - **Whisper Hallucination Suppression:** Rejects hallucinated single-word artifacts (`"You"`, `"Thank you"`, `"MBC"`) generated from background mic hiss, and enforces confidence thresholds on `no_speech_prob <= 0.45` and `avg_logprob >= -1.1`.
+   - **Human-in-the-Loop Gating:** Structured JSON results (`is_valid`, `rejection_reason`, `audio_metrics`, `editable_transcript`) require explicit transcript preview and confirmation before planner submission.
+
+2. **Desktop Observation & Outcome Verification**
+   - **Explicit Failure Representation:** Observations distinguish real screen grabs from failed observations (`is_placeholder=True`, `success=False`, `error`).
+   - **Action-Specific Verification:** Confirms file existence and non-zero byte size on disk for write/export operations; checks non-zero script exit codes; verifies target window title matches on window focus.
+   - **Emergency Stop Lock Clearance:** Triggering emergency stop forcibly terminates computer-use session locks (`session_manager.force_release()`) and blocks subsequent acquisition until explicitly reset.
+
+3. **Browser Automation Audit & Playwright Integration**
+   - Distinguishes interactive Playwright headless automation from HTTP/HTML extraction modes.
+   - Enforces HIGH RISK security gatekeeper approval on consequential actions (purchases, payments, order placements, account settings changes, deletions, and external form submissions).
+
+4. **Workspace Containment & Security**
+   - Blocks path traversal (`../`), drive letter escapes (`C:\Windows`), illegal path characters (`<>:"|?*`), Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`), and symlink escapes.
+   - Confines file writing, reading, rollback, script execution, and unit testing strictly to approved workspace directories.
+
+5. **Task Lifecycle Finite State Machine (FSM)**
+   - Strict transition rules prevent illegal lifecycle transitions (e.g., terminal states `COMPLETED/STOPPED/FAILED` cannot transition to `RUNNING`).
+   - Emergency stop and task cancellation halt execution immediately and block subsequent retry loops.
+
+---
+
+## 8. How to Launch and Test SAM
+
+### Run the Full Verification Suite (73 Automated Tests):
 ```powershell
-# 1. Run Core System & Acceptance Suite (25 tests):
-python -m unittest sam.tests.test_suite -v
+# 1. Run Phase 6.1 Reliability & Safety Suite (24 tests):
+python -m unittest sam.tests.test_phase6_1_hardening -v
 
 # 2. Run Phase 6 Agent Integrations Suite (13 tests):
 python -m unittest sam.tests.test_agent_integrations -v
 
 # 3. Run Desktop Web API Suite (11 tests):
 python -m unittest sam.tests.test_desktop_api -v
+
+# 4. Run Core System & Acceptance Suite (25 tests):
+python -m unittest sam.tests.test_suite -v
 ```
 
 ### Launch the Interactive Desktop Workstation:

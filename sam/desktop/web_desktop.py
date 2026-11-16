@@ -293,6 +293,7 @@ async def get_screenshot_info():
 async def list_voice_devices():
     devices = []
     default_id = -1
+    preferred_id, preferred_info = voice_interface.find_preferred_device()
     try:
         import sounddevice as sd
         raw = sd.query_devices()
@@ -309,16 +310,22 @@ async def list_voice_devices():
                     "is_default": (idx == default_id),
                     "is_airdopes": is_airdopes,
                     "is_intel": is_intel,
+                    "is_preferred": is_airdopes,
                 })
     except Exception as e:
         return JSONResponse({"devices": [], "default_id": -1, "error": str(e)})
-    return JSONResponse({"devices": devices, "default_id": default_id})
+    return JSONResponse({
+        "devices": devices,
+        "default_id": default_id,
+        "preferred_device": "boAt Airdopes 131",
+        "preferred_info": preferred_info,
+    })
 
 @app.post("/api/voice/record")
 async def record_voice_sample(req: VoiceRecordRequest):
     """
-    Records speech from chosen microphone and returns transcript for user review.
-    Does NOT auto-execute to prevent accidental triggers.
+    Records speech from chosen microphone and returns structured result for user review.
+    Does NOT auto-execute to prevent accidental triggers or hallucinations from starting tasks.
     """
     try:
         dur = max(1.0, min(req.duration, 15.0))
@@ -329,20 +336,20 @@ async def record_voice_sample(req: VoiceRecordRequest):
                 "error": "Microphone recording returned no audio samples. Check device permissions."
             })
 
-        peak = float(np.max(np.abs(audio)))
-        rms = float(np.sqrt(np.mean(audio**2)))
-
-        transcript = voice_interface.transcribe(audio)
-        reliable = (peak >= 0.005) and (len(transcript.strip()) > 0)
+        result = voice_interface.transcribe_structured(audio)
 
         return JSONResponse({
             "success": True,
-            "transcript": transcript,
-            "peak_level": round(peak, 5),
-            "rms_volume": round(rms, 5),
+            "is_valid": result.is_valid,
+            "transcript": result.text,
+            "editable_transcript": result.text,
+            "confidence": result.confidence,
+            "rejection_reason": result.rejection_reason,
+            "ready_for_submission": result.is_valid,
+            "audio_metrics": result.audio_metrics,
+            "segments": result.segments,
             "duration": dur,
-            "reliable": reliable,
-            "message": "Transcription ready for review." if reliable else "Low audio signal detected. You can edit the text before sending."
+            "message": "Transcription verified. Review and edit before submitting." if result.is_valid else (result.rejection_reason or "Low confidence audio rejected.")
         })
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
@@ -394,13 +401,16 @@ async def run_coding_script(req: CodeRunRequest):
 
 @app.post("/api/coding/rollback")
 async def rollback_coding_file(req: CodingRollbackRequest):
-    success = coding_agent.rollback_file(req.workspace, req.filename)
-    if success:
-        return JSONResponse({"success": True, "message": f"Successfully rolled back {req.filename} from checkpoint."})
-    return JSONResponse({"success": False, "error": f"No checkpoint backup found for {req.filename}"}, status_code=404)
+    try:
+        success = coding_agent.rollback_file(req.workspace, req.filename)
+        if success:
+            return JSONResponse({"success": True, "message": f"Successfully rolled back {req.filename} from checkpoint."})
+        return JSONResponse({"success": False, "error": f"No checkpoint backup found for {req.filename}"}, status_code=404)
+    except (FileNotFoundError, PermissionError) as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=404)
 
 @app.post("/api/coding/test")
-async def run_coding_tests(req: CodingTestRequest):
+def run_coding_tests(req: CodingTestRequest):
     res = coding_agent.run_tests(req.workspace, req.pattern)
     return JSONResponse(res)
 

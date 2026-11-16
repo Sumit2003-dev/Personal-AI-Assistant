@@ -56,7 +56,9 @@ class ApplicationInfo:
         self.is_installed = False
         return False
 
-    def is_running(self) -> bool:
+    def is_running(self, running_names: Optional[set] = None) -> bool:
+        if running_names is not None:
+            return any(p in running_names for p in self.process_names)
         for proc in psutil.process_iter(["name"]):
             try:
                 name = proc.info["name"]
@@ -66,14 +68,14 @@ class ApplicationInfo:
                 continue
         return False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, running_names: Optional[set] = None) -> Dict[str, Any]:
         return {
             "app_id": self.app_id,
             "name": self.name,
             "category": self.category,
             "description": self.description,
             "is_installed": self.is_installed,
-            "is_running": self.is_running(),
+            "is_running": self.is_running(running_names),
             "executable_path": self.executable_path,
         }
 
@@ -246,7 +248,15 @@ class ApplicationRegistry:
             self._apps[app.app_id] = app
 
     def list_applications(self) -> List[Dict[str, Any]]:
-        return [app.to_dict() for app in self._apps.values()]
+        running_names = set()
+        for proc in psutil.process_iter(["name"]):
+            try:
+                n = proc.info.get("name")
+                if n:
+                    running_names.add(n.lower())
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return [app.to_dict(running_names) for app in self._apps.values()]
 
     def get_app(self, app_id: str) -> Optional[ApplicationInfo]:
         return self._apps.get(app_id.lower())

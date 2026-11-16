@@ -203,7 +203,7 @@ class TestAgentIntegrations(unittest.TestCase):
         )
         self.assertFalse(res["success"])
         self.assertTrue(res.get("requires_approval", False))
-        self.assertIn("explicit confirmation", res.get("error", ""))
+        self.assertIn("explicit user confirmation", res.get("error", ""))
 
     # -------------------------------------------------------------
     # 5. Document Agent Multi-Format & Source Preservation
