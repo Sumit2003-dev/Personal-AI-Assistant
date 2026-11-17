@@ -1,0 +1,21 @@
+SAM — Autonomous AI Desktop Assistant
+Version 7.0.0
+
+BEFORE YOU INSTALL
+==================
+
+SAM requires the following to be installed separately:
+
+1. Ollama (Local AI Runtime)
+   Download from: https://ollama.com
+   After installing Ollama, open a terminal and run:
+     ollama pull qwen2.5:3b
+     ollama pull qwen3:4b
+
+2. Models are stored in D:\Ollama\models by default.
+   If you use a different location, set the OLLAMA_MODELS environment variable.
+
+3. Faster-Whisper speech recognition models:
+   D:\Whisper\models\faster-whisper-tiny.en
+
+SAM will start and work in text-only mode if Ollama or voice is unavailable.

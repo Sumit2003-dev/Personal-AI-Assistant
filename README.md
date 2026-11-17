@@ -253,3 +253,29 @@ python -m sam.app.main --workflow D    # Hardware Telemetry (RTX 4050 / CPU / RA
 python -m sam.app.main --workflow E    # Document Intelligence (PDF Summarization)
 ```
 
+---
+
+## 9. Production Packaging & Desktop Application (Phase 7)
+
+SAM features a native Windows desktop launcher and installer architecture:
+
+### Native Desktop Launcher (`sam_main.py` / `SAM.exe`):
+- **Single-Instance Enforcement:** Windows named mutex (`Global\SAM_DesktopApp_SingleInstance_7`) prevents accidental duplicate background processes and focuses the running instance.
+- **Runtime Pre-Flight Validation:** Inspects Python dependencies, detects Ollama installation, checks local Ollama API status, and identifies presence of required models (`qwen2.5:3b`, `qwen3:4b`).
+- **User Data Isolation:** Automatically directs database (`sam_memory.db`), task logs, and workspaces to `%APPDATA%\SAM`, keeping binaries cleanly separated from personal data.
+- **System Tray Controller:** Provides background tray icon with `Open SAM`, `Restart Backend`, and graceful `Exit`.
+
+### Build Windows Executable & Installer:
+```powershell
+# 1. Run all 135 automated unit and regression tests:
+python -m unittest sam.tests.test_packaging sam.tests.test_phase6_1_hardening sam.tests.test_agent_integrations sam.tests.test_desktop_api sam.tests.test_suite
+
+# 2. Build standalone Windows executable bundle:
+packaging\build_windows.bat
+
+# 3. Build full Inno Setup Windows installer (requires Inno Setup 6):
+packaging\build_windows.bat --installer
+```
+Installer outputs to `packaging\output\SAM_Setup_7.0.0.exe`.
+
+
