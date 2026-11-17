@@ -408,7 +408,7 @@ async function handleRecordVoice() {
       transcriptBox.value = data.transcript;
 
       const badge = document.getElementById("transcriptReliability");
-      if (data.reliable) {
+      if (data.is_valid || data.ready_for_submission || data.reliable) {
         badge.className = "badge completed";
         badge.textContent = "VERIFIED SIGNAL";
       } else {

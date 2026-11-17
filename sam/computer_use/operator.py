@@ -82,9 +82,10 @@ class ObserveDesktopTool(BaseTool):
     def execute(self, **kwargs: Any) -> ToolResult:
         obs = computer_operator.observe_state()
         return ToolResult(
-            success=True,
+            success=obs.success,
             output=obs.to_dict(),
-            artifacts=[obs.screenshot_path] if obs.screenshot_path else []
+            artifacts=[obs.screenshot_path] if obs.screenshot_path else [],
+            error=obs.error if not obs.success else None,
         )
 
 
@@ -167,55 +168,62 @@ class OperateNotepadTool(BaseTool):
 
         # 1. Open Notepad
         proc = subprocess.Popen(["notepad.exe", str(target_file)])
-        time.sleep(1.5)
+        hwnd = None
+        try:
+            time.sleep(1.5)
 
-        # 2. Locate main window by class "Notepad" or title
-        hwnd = user32.FindWindowW("Notepad", None)
-        if not hwnd:
-            hwnd = user32.FindWindowW(None, f"{target_file.name} - Notepad")
-        if not hwnd:
-            hwnd = user32.FindWindowW(None, f"{target_file.stem} - Notepad")
-        if not hwnd:
-            hwnd = user32.FindWindowW(None, "Untitled - Notepad")
+            # 2. Locate main window by class "Notepad" or title
+            hwnd = user32.FindWindowW("Notepad", None)
+            if not hwnd:
+                hwnd = user32.FindWindowW(None, f"{target_file.name} - Notepad")
+            if not hwnd:
+                hwnd = user32.FindWindowW(None, f"{target_file.stem} - Notepad")
+            if not hwnd:
+                hwnd = user32.FindWindowW(None, "Untitled - Notepad")
 
-        def find_notepad_edit(main_hwnd):
-            if not main_hwnd:
+            def find_notepad_edit(main_hwnd):
+                if not main_hwnd:
+                    return None
+                for cls_name in ["Edit", "RichEditD2DPT"]:
+                    h = user32.FindWindowExW(main_hwnd, None, cls_name, None)
+                    if h:
+                        return h
+                tb = user32.FindWindowExW(main_hwnd, None, "NotepadTextBox", None)
+                if tb:
+                    h = user32.FindWindowExW(tb, None, "RichEditD2DPT", None)
+                    if h:
+                        return h
                 return None
-            for cls_name in ["Edit", "RichEditD2DPT"]:
-                h = user32.FindWindowExW(main_hwnd, None, cls_name, None)
-                if h:
-                    return h
-            tb = user32.FindWindowExW(main_hwnd, None, "NotepadTextBox", None)
-            if tb:
-                h = user32.FindWindowExW(tb, None, "RichEditD2DPT", None)
-                if h:
-                    return h
-            return None
 
-        edit_hwnd = find_notepad_edit(hwnd)
+            edit_hwnd = find_notepad_edit(hwnd)
 
-        if not hwnd:
-            proc.terminate()
-            return ToolResult(success=False, error="Failed to locate Notepad window.")
+            if not hwnd:
+                return ToolResult(success=False, error="Failed to locate Notepad window.")
 
-        # 3. Type text into Notepad's Edit / RichEditD2DPT control
-        if edit_hwnd:
-            user32.SendMessageW(edit_hwnd, 0x000C, 0, ctypes.c_wchar_p(text_content))  # WM_SETTEXT
+            # 3. Type text into Notepad's Edit / RichEditD2DPT control
+            if edit_hwnd:
+                user32.SendMessageW(edit_hwnd, 0x000C, 0, ctypes.c_wchar_p(text_content))  # WM_SETTEXT
 
-        # 4. Save and ensure file contents match
-        target_file.write_text(text_content, encoding="utf-8")
-        if hwnd:
-            user32.SendMessageW(hwnd, 0x0111, 3, 0)  # WM_COMMAND Save
-        time.sleep(0.5)
+            # 4. Save and ensure file contents match
+            target_file.write_text(text_content, encoding="utf-8")
+            if hwnd:
+                user32.SendMessageW(hwnd, 0x0111, 3, 0)  # WM_COMMAND Save
+            time.sleep(0.5)
 
-        # 5. Capture screenshot
-        img, shot_path = screen_observer.capture_fullscreen(save=True)
-
-        # 6. Close Notepad cleanly
-        user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
-        time.sleep(0.5)
-        if proc.poll() is None:
-            proc.terminate()
+            # 5. Capture screenshot
+            img, shot_path = screen_observer.capture_fullscreen(save=True)
+        finally:
+            # 6. Close Notepad cleanly and reap subprocess
+            if hwnd:
+                user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+            time.sleep(0.5)
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=1.0)
 
         # 7. Verify file on disk
         if not target_file.exists():

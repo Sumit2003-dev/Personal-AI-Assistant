@@ -402,9 +402,11 @@ class VoiceInterface:
             if not success or not wav_path.exists():
                 import subprocess
                 escaped = text.replace("'", "''")
-                subprocess.Popen(
+                subprocess.run(
                     ["powershell", "-NoProfile", "-Command", f"$v = New-Object -ComObject SAPI.SpVoice; $v.Speak('{escaped}')"],
-                    shell=False
+                    capture_output=True,
+                    timeout=10.0,
+                    stdin=subprocess.DEVNULL,
                 )
                 return True
 
@@ -445,9 +447,6 @@ class VoiceInterface:
             "preferred_microphone_info": pref_info,
             "status": "READY" if has_whisper else "DEGRADED",
         }
-
-
-voice_interface = VoiceInterface()
 
 
 voice_interface = VoiceInterface()

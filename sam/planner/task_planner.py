@@ -128,12 +128,14 @@ class TaskPlanner:
                 for idx, item in enumerate(data):
                     risk_str = item.get("risk_level", "LOW").upper()
                     risk = RiskLevel[risk_str] if risk_str in RiskLevel.__members__ else RiskLevel.LOW
+                    t_args = item.get("tool_args")
+                    tool_args = t_args if isinstance(t_args, dict) else {}
                     steps.append(TaskStep(
                         step_index=idx,
                         title=item.get("title", f"Step {idx+1}"),
                         description=item.get("description", ""),
                         tool_name=item.get("tool_name", ""),
-                        tool_args=item.get("tool_args", {}),
+                        tool_args=tool_args,
                         risk_level=risk,
                         verification_criteria=item.get("verification_criteria", "Operation completed with success=True."),
                     ))

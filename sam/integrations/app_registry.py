@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List
 import shutil
 import subprocess
 import os
+import sys
 import psutil
 import logging
 
@@ -271,8 +272,27 @@ class ApplicationRegistry:
             return False
 
         try:
-            cmd = [app.executable_path] + (args or [])
-            subprocess.Popen(cmd, shell=False)
+            if sys.platform == "win32" and hasattr(os, "startfile"):
+                arg_str = " ".join(f'"{a}"' for a in (args or []))
+                if arg_str:
+                    os.startfile(app.executable_path, arguments=arg_str)
+                else:
+                    os.startfile(app.executable_path)
+            else:
+                cmd = [app.executable_path] + (args or [])
+                creationflags = (
+                    subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                    if sys.platform == "win32"
+                    else 0
+                )
+                subprocess.Popen(
+                    cmd,
+                    shell=False,
+                    creationflags=creationflags,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             logger.info(f"Launched application '{app.name}'.")
             return True
         except Exception as e:

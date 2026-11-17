@@ -322,7 +322,7 @@ async def list_voice_devices():
     })
 
 @app.post("/api/voice/record")
-async def record_voice_sample(req: VoiceRecordRequest):
+def record_voice_sample(req: VoiceRecordRequest):
     """
     Records speech from chosen microphone and returns structured result for user review.
     Does NOT auto-execute to prevent accidental triggers or hallucinations from starting tasks.
@@ -341,6 +341,7 @@ async def record_voice_sample(req: VoiceRecordRequest):
         return JSONResponse({
             "success": True,
             "is_valid": result.is_valid,
+            "reliable": result.is_valid,
             "transcript": result.text,
             "editable_transcript": result.text,
             "confidence": result.confidence,
@@ -395,7 +396,7 @@ async def write_coding_file(req: CodeWriteRequest):
         return JSONResponse({"success": False, "error": str(e)}, status_code=400)
 
 @app.post("/api/coding/run")
-async def run_coding_script(req: CodeRunRequest):
+def run_coding_script(req: CodeRunRequest):
     res = coding_agent.run_script(req.workspace, req.filename, args=req.args)
     return JSONResponse(res)
 
@@ -433,7 +434,7 @@ async def list_video_exports():
     return JSONResponse({"exports": files})
 
 @app.post("/api/video/render")
-async def render_video_workflow(req: VideoRenderRequest):
+def render_video_workflow(req: VideoRenderRequest):
     source_path = None
     if req.source_filename:
         src = settings.data_dir / "video_exports" / req.source_filename
@@ -447,7 +448,7 @@ async def render_video_workflow(req: VideoRenderRequest):
 # Browser Agent Workspace
 # ---------------------------------------------------------
 @app.post("/api/browser/research")
-async def browser_research(req: BrowserResearchRequest):
+def browser_research(req: BrowserResearchRequest):
     target_url = req.url or f"https://en.wikipedia.org/wiki/{req.query}"
     res = browser_agent.fetch_page_content(target_url)
     return JSONResponse({
@@ -459,17 +460,17 @@ async def browser_research(req: BrowserResearchRequest):
     })
 
 @app.post("/api/browser/search")
-async def browser_search(req: BrowserSearchRequest):
+def browser_search(req: BrowserSearchRequest):
     res = browser_agent.search_web(req.query, req.max_results)
     return JSONResponse(res)
 
 @app.post("/api/browser/links")
-async def browser_links(req: BrowserLinksRequest):
+def browser_links(req: BrowserLinksRequest):
     res = browser_agent.extract_links(req.url)
     return JSONResponse(res)
 
 @app.post("/api/browser/submit")
-async def browser_submit(req: BrowserSubmitRequest):
+def browser_submit(req: BrowserSubmitRequest):
     res = browser_agent.submit_form(req.url, req.form_data, req.method)
     status_code = 403 if res.get("requires_approval") else (200 if res.get("success") else 400)
     return JSONResponse(res, status_code=status_code)

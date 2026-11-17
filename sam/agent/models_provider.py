@@ -62,8 +62,12 @@ class OllamaProvider(BaseModelProvider):
     def generate(self, prompt: str, system_prompt: str = "", **kwargs: Any) -> str:
         available = self.list_available_models()
         target_model = kwargs.get("model") or self.model
-        if target_model not in available and available:
-            target_model = available[0]
+        if available and target_model not in available:
+            matched = next(
+                (m for m in available if m.startswith(target_model + ":") or m.split(":")[0] == target_model.split(":")[0]),
+                None
+            )
+            target_model = matched if matched else available[0]
 
         payload = {
             "model": target_model,
@@ -103,7 +107,7 @@ class ModelManager:
     def get_status(self) -> Dict[str, Any]:
         online = self.is_available()
         models = self.ollama.list_available_models() if online else []
-        model_downloaded = any(self.ollama.model in m for m in models)
+        model_downloaded = any(self.ollama.model in m or m.startswith(self.ollama.model.split(":")[0]) for m in models)
         return {
             "ollama_online": online,
             "ollama_host": self.ollama.host,
