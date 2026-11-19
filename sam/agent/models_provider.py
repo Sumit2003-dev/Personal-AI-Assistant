@@ -13,6 +13,79 @@ from sam.config.settings import settings
 logger = logging.getLogger("sam.models_provider")
 
 
+class ModelUnavailableError(RuntimeError):
+    """Raised when a requested LLM model is not available in the inference runtime."""
+    pass
+
+
+def resolve_ollama_model(requested: str, available: List[str]) -> Optional[str]:
+    """
+    Resolves a requested Ollama model string against the list of available models.
+    Matching rules:
+      1. Exact match (case-sensitive)
+      2. Exact match (case-insensitive)
+      3. Tag normalisation (:latest omitted or explicit):
+         - If requested is 'qwen3:4b', matches 'qwen3:4b:latest' or 'qwen3:4b'
+         - If requested ends with ':latest', matches without ':latest'
+         - If requested has no tag (e.g. 'qwen3'), matches 'qwen3:latest'
+      4. Strict tag/size preservation:
+         - If requested has a specific size (e.g. '3b' or '4b'), it NEVER matches a different size (e.g. '7b' or '14b').
+      5. Returns None if no safe match found. NEVER falls back to arbitrary available[0].
+    """
+    if not requested or not available:
+        return None
+
+    # 1. Exact match
+    if requested in available:
+        return requested
+
+    # 2. Case-insensitive exact match
+    req_lower = requested.lower()
+    for m in available:
+        if m.lower() == req_lower:
+            return m
+
+    # 3. Handle :latest suffix variations
+    if ":" not in requested:
+        target_latest = f"{req_lower}:latest"
+        for m in available:
+            if m.lower() == target_latest:
+                return m
+    else:
+        if req_lower.endswith(":latest"):
+            stripped = req_lower[:-7]
+            for m in available:
+                if m.lower() == stripped:
+                    return m
+        else:
+            with_latest = f"{req_lower}:latest"
+            for m in available:
+                if m.lower() == with_latest:
+                    return m
+
+    # 4. Strict family & size prefix match
+    if ":" in requested:
+        req_family, req_tag = requested.split(":", 1)
+        req_family_lower = req_family.lower()
+        req_tag_lower = req_tag.lower()
+        for m in available:
+            if ":" in m:
+                cand_family, cand_tag = m.split(":", 1)
+                if cand_family.lower() == req_family_lower:
+                    if cand_tag.lower() == req_tag_lower:
+                        return m
+                    if cand_tag.lower().startswith(req_tag_lower + "-") or cand_tag.lower().startswith(req_tag_lower + "_"):
+                        return m
+    else:
+        for m in available:
+            if ":" in m:
+                cand_family, cand_tag = m.split(":", 1)
+                if cand_family.lower() == req_lower and cand_tag.lower() == "latest":
+                    return m
+
+    return None
+
+
 class BaseModelProvider(ABC):
     """Abstract interface for LLM inference providers."""
 
@@ -62,12 +135,14 @@ class OllamaProvider(BaseModelProvider):
     def generate(self, prompt: str, system_prompt: str = "", **kwargs: Any) -> str:
         available = self.list_available_models()
         target_model = kwargs.get("model") or self.model
-        if available and target_model not in available:
-            matched = next(
-                (m for m in available if m.startswith(target_model + ":") or m.split(":")[0] == target_model.split(":")[0]),
-                None
-            )
-            target_model = matched if matched else available[0]
+        if available:
+            resolved = resolve_ollama_model(target_model, available)
+            if not resolved:
+                raise ModelUnavailableError(
+                    f"Requested model '{target_model}' is not available in Ollama. "
+                    f"Available models: {available}. Please run 'ollama pull {target_model}'."
+                )
+            target_model = resolved
 
         payload = {
             "model": target_model,
@@ -107,18 +182,21 @@ class ModelManager:
     def get_status(self) -> Dict[str, Any]:
         online = self.is_available()
         models = self.ollama.list_available_models() if online else []
-        model_downloaded = any(self.ollama.model in m or m.startswith(self.ollama.model.split(":")[0]) for m in models)
+        resolved_model = resolve_ollama_model(self.ollama.model, models) if (online and models) else None
+        model_downloaded = resolved_model is not None
+        effective_model = resolved_model or self.ollama.model
         return {
             "ollama_online": online,
             "ollama_host": self.ollama.host,
             "configured_model": self.ollama.model,
+            "resolved_model": effective_model,
             "model_downloaded": model_downloaded,
             "available_models": models,
             "status": "ONLINE" if (online and model_downloaded) else "UNAVAILABLE",
             "message": (
-                f"Ollama connected with model '{self.ollama.model}'"
+                f"Ollama connected with model '{effective_model}'"
                 if (online and model_downloaded)
-                else "Local LLM inference runtime is UNAVAILABLE. Ollama is offline or qwen3:4b is not downloaded."
+                else f"Local LLM inference runtime is UNAVAILABLE. Ollama is offline or '{self.ollama.model}' is not downloaded."
             ),
         }
 
@@ -135,7 +213,14 @@ class ModelManager:
 
         available = self.ollama.list_available_models()
         # Prefer fast instruction model for structured JSON decomposition
-        planning_model = "qwen2.5:3b" if any("qwen2.5:3b" in m for m in available) else self.ollama.model
+        preferred_planning = "qwen2.5:3b"
+        planning_model = resolve_ollama_model(preferred_planning, available)
+        if not planning_model:
+            planning_model = resolve_ollama_model(self.ollama.model, available)
+
+        if not planning_model:
+            logger.warning("Cannot generate LLM plan: Neither fast model nor configured model found in available models.")
+            return None
 
         tool_names = [t["name"] for t in tools_schema]
 
@@ -182,7 +267,14 @@ class ModelManager:
         if not self.is_available():
             return None
         available = self.ollama.list_available_models()
-        chat_model = "qwen2.5:3b" if any("qwen2.5:3b" in m for m in available) else self.ollama.model
+        preferred_chat = "qwen2.5:3b"
+        chat_model = resolve_ollama_model(preferred_chat, available)
+        if not chat_model:
+            chat_model = resolve_ollama_model(self.ollama.model, available)
+
+        if not chat_model:
+            logger.warning("Cannot generate chat reply: Configured model not found in available models.")
+            return None
 
         context_lines = []
         if memories:

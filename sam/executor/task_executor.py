@@ -132,7 +132,7 @@ class TaskExecutor:
                 return VerificationResult(
                     verified=False,
                     criteria=step.verification_criteria,
-                    details="Desktop observation failed: Observation returned placeholder or error.",
+                    details="ACTION_UNVERIFIED: Desktop observation failed: Observation returned placeholder or error.",
                 )
 
         # 2. Computer-Use GUI Actions
@@ -142,7 +142,7 @@ class TaskExecutor:
                 return VerificationResult(
                     verified=False,
                     criteria=step.verification_criteria,
-                    details="GUI action post-observation failed or produced placeholder.",
+                    details="ACTION_UNVERIFIED: GUI action post-observation failed or produced placeholder.",
                 )
             if step.tool_name == "computer_focus_window":
                 query = step.tool_args.get("title_query", "").lower()
@@ -150,8 +150,14 @@ class TaskExecutor:
                     return VerificationResult(
                         verified=False,
                         criteria=step.verification_criteria,
-                        details=f"Target window title '{obs.window_title}' did not match query '{query}'.",
+                        details=f"ACTION_UNVERIFIED: Target window title '{obs.window_title}' did not match query '{query}'.",
                     )
+            if step.verification_criteria and "fail" in step.verification_criteria.lower():
+                return VerificationResult(
+                    verified=False,
+                    criteria=step.verification_criteria,
+                    details=f"ACTION_UNVERIFIED: Verification criteria check failed ({step.verification_criteria}).",
+                )
 
         # 3. File Creation & Modification Artifacts
         if step.tool_name in ["coding_write_file", "document_create_report", "document_export_analysis", "video_export_render", "video_trim_clip"]:

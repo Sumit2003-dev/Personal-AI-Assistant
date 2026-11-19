@@ -15,6 +15,7 @@ import numpy as np
 from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from sam.config.settings import settings
@@ -130,11 +131,11 @@ async def get_index():
 # System Telemetry & Health
 # ---------------------------------------------------------
 @app.get("/api/telemetry")
-async def get_telemetry():
+def get_telemetry():
     return JSONResponse(system_monitor.get_full_telemetry())
 
 @app.get("/api/telemetry/health")
-async def get_telemetry_health():
+def get_telemetry_health():
     return JSONResponse(system_monitor.analyze_health())
 
 @app.get("/api/applications")
@@ -163,8 +164,8 @@ async def send_chat_message(req: ChatMessageRequest):
 
     memory_store.log_message("user", msg)
 
-    # Autonomous planning via task planner
-    task = task_planner.plan(msg, context=req.context)
+    # Autonomous planning via task planner offloaded to threadpool
+    task = await run_in_threadpool(task_planner.plan, msg, context=req.context)
     memory_store.record_task(task.to_dict())
 
     # Log plan to audit trail
@@ -196,7 +197,7 @@ async def send_chat_message(req: ChatMessageRequest):
 
 @app.post("/api/tasks/create")
 async def create_task(req: TaskCreateRequest):
-    task = task_planner.plan(req.objective, req.context)
+    task = await run_in_threadpool(task_planner.plan, req.objective, req.context)
     memory_store.log_message("user", req.objective)
     memory_store.record_task(task.to_dict())
     asyncio.create_task(task_executor.execute_task_async(task))
@@ -261,7 +262,7 @@ async def reject_step(task_id: str):
 # Computer Screen & Live Window Tracking
 # ---------------------------------------------------------
 @app.get("/api/computer/screenshot/image")
-async def get_screenshot_image():
+def get_screenshot_image():
     """Captures and returns the live desktop screen as an image."""
     img, _ = screen_observer.capture_fullscreen(save=False)
     buf = io.BytesIO()
@@ -270,7 +271,7 @@ async def get_screenshot_image():
     return Response(content=buf.getvalue(), media_type="image/jpeg")
 
 @app.get("/api/computer/active_window")
-async def get_active_window():
+def get_active_window():
     fg = window_manager.get_foreground_window()
     return JSONResponse({
         "hwnd": fg.get("hwnd", 0),
@@ -281,7 +282,7 @@ async def get_active_window():
     })
 
 @app.get("/api/computer/screenshot")
-async def get_screenshot_info():
+def get_screenshot_info():
     img, path = screen_observer.capture_fullscreen(save=True)
     return JSONResponse({"success": True, "path": str(path) if path else ""})
 
@@ -388,7 +389,7 @@ async def read_coding_file(workspace: str, filename: str):
         return JSONResponse({"success": False, "error": str(e)}, status_code=404)
 
 @app.post("/api/coding/write")
-async def write_coding_file(req: CodeWriteRequest):
+def write_coding_file(req: CodeWriteRequest):
     try:
         path = coding_agent.write_file(req.workspace, req.filename, req.content)
         return JSONResponse({"success": True, "path": str(path)})
@@ -401,7 +402,7 @@ def run_coding_script(req: CodeRunRequest):
     return JSONResponse(res)
 
 @app.post("/api/coding/rollback")
-async def rollback_coding_file(req: CodingRollbackRequest):
+def rollback_coding_file(req: CodingRollbackRequest):
     try:
         success = coding_agent.rollback_file(req.workspace, req.filename)
         if success:
@@ -495,7 +496,7 @@ async def list_documents(workspace: str = "default_project"):
     return JSONResponse({"workspace": workspace, "documents": docs})
 
 @app.post("/api/documents/summarize")
-async def summarize_document_api(req: DocumentSummarizeRequest):
+def summarize_document_api(req: DocumentSummarizeRequest):
     path = settings.data_dir / "workspaces" / req.workspace / req.filename
     if not path.exists():
         return JSONResponse({"error": f"File '{req.filename}' not found."}, status_code=404)
@@ -513,7 +514,7 @@ async def upload_document(file: UploadFile = File(...), workspace: str = Form("d
     return JSONResponse({"success": True, "filename": file.filename, "size_bytes": len(content)})
 
 @app.post("/api/documents/export")
-async def export_document_analysis(req: DocumentExportRequest):
+def export_document_analysis(req: DocumentExportRequest):
     path = document_engine.export_analysis(req.file_path, req.format)
     return JSONResponse({"success": True, "exported_path": str(path)})
 

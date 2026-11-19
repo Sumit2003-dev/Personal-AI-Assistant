@@ -376,6 +376,8 @@ async function refreshAudioDevices() {
   }
 }
 
+let transcriptState = "IDLE"; // "IDLE" | "VERIFIED_RECORDING" | "REJECTED_RECORDING" | "MANUAL_TEXT_INPUT"
+
 async function handleRecordVoice() {
   const select = document.getElementById("voiceDeviceSelect");
   const devId = select ? parseInt(select.value) : null;
@@ -408,12 +410,14 @@ async function handleRecordVoice() {
       transcriptBox.value = data.transcript;
 
       const badge = document.getElementById("transcriptReliability");
-      if (data.is_valid || data.ready_for_submission || data.reliable) {
+      if (data.is_valid && (data.reliable || data.ready_for_submission)) {
         badge.className = "badge completed";
         badge.textContent = "VERIFIED SIGNAL";
+        transcriptState = "VERIFIED_RECORDING";
       } else {
         badge.className = "badge waiting_approval";
-        badge.textContent = "LOW SIGNAL / VERIFY";
+        badge.textContent = "REJECTED / LOW SIGNAL";
+        transcriptState = "REJECTED_RECORDING";
       }
       status.textContent = data.message;
     } else {
@@ -426,6 +430,23 @@ async function handleRecordVoice() {
   }
 }
 
+// Attach manual input listener to transcript textarea
+const transcriptEl = document.getElementById("transcriptTextarea");
+if (transcriptEl) {
+  transcriptEl.addEventListener("input", () => {
+    transcriptState = "MANUAL_TEXT_INPUT";
+    const badge = document.getElementById("transcriptReliability");
+    if (badge) {
+      badge.className = "badge running";
+      badge.textContent = "MANUAL INPUT (EDITED)";
+    }
+    const status = document.getElementById("voiceStatusText");
+    if (status) {
+      status.textContent = "Transcript manually edited. Review and submit.";
+    }
+  });
+}
+
 function handlePtt(pressed) {
   fetch(`/api/voice/push_to_talk?pressed=${pressed}`, { method: "POST" });
   const status = document.getElementById("voiceStatusText");
@@ -433,11 +454,28 @@ function handlePtt(pressed) {
 }
 
 function handleExecuteTranscript() {
-  const transcript = document.getElementById("transcriptTextarea").value.trim();
+  const transcriptBox = document.getElementById("transcriptTextarea");
+  const transcript = transcriptBox ? transcriptBox.value.trim() : "";
   if (!transcript) {
     alert("Transcription is empty. Speak or type a command first.");
     return;
   }
+
+  // Reject accidental hallucinated trigger words
+  const cleanWord = transcript.toLowerCase().replace(/[.,!?;:]/g, "").trim();
+  const blockedTriggers = ["you", "thank you", "thanks", "bye", "okay", "so", "subscribe"];
+  if (blockedTriggers.includes(cleanWord)) {
+    alert(`Accidental phrase "${transcript}" cannot initiate task planning.`);
+    return;
+  }
+
+  // Debounce submission button
+  const btnExec = document.getElementById("btnExecuteTranscript");
+  if (btnExec) {
+    btnExec.disabled = true;
+    setTimeout(() => { if (btnExec) btnExec.disabled = false; }, 1200);
+  }
+
   // Route to Chat
   chatInput.value = transcript;
   handleSendChat();
