@@ -65,6 +65,7 @@ hidden_imports = [
     "pydantic.v1",
     # SAM modules
     "sam",
+    "sam_backend_runner",
     "sam.launcher",
     "sam.launcher.app_launcher",
     "sam.launcher.runtime_check",
@@ -101,6 +102,7 @@ hidden_imports = [
     "ctypes.wintypes",
     "socket",
     "sqlite3",
+    "pydoc",
     # Scientific
     "numpy",
     "psutil",
@@ -130,7 +132,6 @@ excludes = [
     "unittest",
     "doctest",
     "pdb",
-    "pydoc",
 ]
 
 # ---------------------------------------------------------------------------

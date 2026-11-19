@@ -162,9 +162,7 @@ def _start_backend() -> subprocess.Popen:
     Launches the FastAPI uvicorn server as a subprocess.
     Streams stdout/stderr to the launcher log file.
     """
-    script = _resolve_backend_script()
     log_file = _LOG_DIR / "backend.log"
-    logger.info("Starting SAM backend: %s", script)
 
     env = os.environ.copy()
     # Pass user data root so the backend can redirect writable paths
@@ -174,14 +172,24 @@ def _start_backend() -> subprocess.Popen:
     env["SAM_UI_HOST"] = UI_HOST
     env["SAM_UI_PORT"] = str(UI_PORT)
 
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--backend-server"]
+        cwd = str(Path(sys.executable).parent)
+        logger.info("Starting SAM backend in frozen mode: %s", cmd)
+    else:
+        script = _resolve_backend_script()
+        cmd = [sys.executable, script]
+        cwd = str(Path(script).parent)
+        logger.info("Starting SAM backend: %s", script)
+
     with open(log_file, "a", encoding="utf-8") as fh:
         proc = subprocess.Popen(
-            [sys.executable, script],
+            cmd,
             stdout=fh,
             stderr=fh,
             env=env,
             stdin=subprocess.DEVNULL,
-            cwd=str(Path(script).parent.parent.parent),  # repo / bundle root
+            cwd=cwd,
         )
 
     logger.info("Backend process PID: %d", proc.pid)

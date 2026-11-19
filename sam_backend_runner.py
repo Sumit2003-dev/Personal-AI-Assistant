@@ -90,13 +90,18 @@ def _patch_settings() -> None:
         from pathlib import Path as _P
 
         sam_data_root = _P(os.environ["SAM_DATA_ROOT"])
-        _settings_mod.DATA_DIR = sam_data_root / "data"
-        _settings_mod.LOGS_DIR = sam_data_root / "logs"
-        _settings_mod.settings.data_dir = _settings_mod.DATA_DIR
-        _settings_mod.settings.logs_dir = _settings_mod.LOGS_DIR
-        _settings_mod.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        _settings_mod.LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        logger.info("Data root: %s", sam_data_root)
+        target_data = sam_data_root / "data"
+        target_logs = sam_data_root / "logs"
+        try:
+            target_data.mkdir(parents=True, exist_ok=True)
+            target_logs.mkdir(parents=True, exist_ok=True)
+            _settings_mod.DATA_DIR = target_data
+            _settings_mod.LOGS_DIR = target_logs
+            _settings_mod.settings.data_dir = target_data
+            _settings_mod.settings.logs_dir = target_logs
+            logger.info("Data root: %s", sam_data_root)
+        except (PermissionError, OSError) as pe:
+            logger.warning("Could not create requested data root %s: %s; retaining default.", sam_data_root, pe)
     except Exception as exc:
         logger.warning("Settings patch skipped: %s", exc)
 

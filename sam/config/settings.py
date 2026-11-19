@@ -25,7 +25,14 @@ def _resolve_runtime_data_dir() -> Path:
         p = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "SAM" / "data"
     else:
         p = SAM_DIR / "data"
-    p.mkdir(parents=True, exist_ok=True)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        p = SAM_DIR / "data"
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            pass
     return p
 
 
@@ -37,7 +44,14 @@ def _resolve_runtime_logs_dir() -> Path:
         p = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "SAM" / "logs"
     else:
         p = SAM_DIR / "logs"
-    p.mkdir(parents=True, exist_ok=True)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        p = SAM_DIR / "logs"
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            pass
     return p
 
 

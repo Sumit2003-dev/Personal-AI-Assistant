@@ -1,0 +1,22 @@
+{
+  "build_date": "2026-11-19T19:48:18+05:30",
+  "pyinstaller_version": "6.22.3",
+  "artifacts": [
+    {
+      "name": "SAM.exe",
+      "relative_path": "dist\\\\SAM\\\\SAM.exe",
+      "size_bytes": 32572227,
+      "sha256": "39ED9357E3D2FE1C5CE38CEEE14F5C2B103E39BB8D5F318945BE93830754B56F",
+      "type": "portable_application_executable"
+    },
+    {
+      "name": "SAM_Setup_7.0.0.exe",
+      "relative_path": "packaging\\\\output\\\\SAM_Setup_7.0.0.exe",
+      "size_bytes": 217833395,
+      "sha256": "3D0F4C3454DEB37D073EE425CC623E727AB70B8C930E2E953E53C47F9BC33794",
+      "type": "windows_inno_setup_installer"
+    }
+  ],
+  "python_version": "3.14.0",
+  "release_version": "7.0.0"
+}
