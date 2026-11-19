@@ -259,13 +259,25 @@ class ModelManager:
 
     def generate_chat_reply(
         self,
-        message: str,
+        message: str | List[Dict[str, Any]],
         history: Optional[List[Dict[str, Any]]] = None,
         memories: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[str]:
         """Generates a direct conversational response using the local model."""
         if not self.is_available():
             return None
+
+        if isinstance(message, list):
+            user_msg = ""
+            extracted_history = []
+            for item in message:
+                if isinstance(item, dict):
+                    if item.get("role") == "user":
+                        user_msg = item.get("content", "")
+                    extracted_history.append(item)
+            message = user_msg or (message[-1].get("content", "") if message and isinstance(message[-1], dict) else str(message))
+            if not history and len(extracted_history) > 1:
+                history = extracted_history[:-1]
         available = self.ollama.list_available_models()
         preferred_chat = "qwen2.5:3b"
         chat_model = resolve_ollama_model(preferred_chat, available)
