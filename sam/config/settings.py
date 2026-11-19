@@ -6,19 +6,46 @@ Optimized for HP OMEN 16, Windows 11, NVIDIA RTX 4050 6GB VRAM, 16GB RAM.
 from dataclasses import dataclass, field
 from pathlib import Path
 import os
+import sys
 
 # Root directories
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    BASE_DIR = Path(sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 SAM_DIR = BASE_DIR / "sam"
-DATA_DIR = SAM_DIR / "data"
-LOGS_DIR = SAM_DIR / "logs"
+
+
+def _resolve_runtime_data_dir() -> Path:
+    env_root = os.environ.get("SAM_DATA_ROOT")
+    if env_root:
+        p = Path(env_root) / "data"
+    elif getattr(sys, "frozen", False):
+        p = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "SAM" / "data"
+    else:
+        p = SAM_DIR / "data"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _resolve_runtime_logs_dir() -> Path:
+    env_root = os.environ.get("SAM_DATA_ROOT")
+    if env_root:
+        p = Path(env_root) / "logs"
+    elif getattr(sys, "frozen", False):
+        p = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "SAM" / "logs"
+    else:
+        p = SAM_DIR / "logs"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+DATA_DIR = _resolve_runtime_data_dir()
+LOGS_DIR = _resolve_runtime_logs_dir()
 TESTS_DIR = SAM_DIR / "tests"
 STATIC_DIR = SAM_DIR / "desktop" / "static"
 TEMPLATES_DIR = SAM_DIR / "desktop" / "templates"
-
-# Ensure runtime directories exist
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass

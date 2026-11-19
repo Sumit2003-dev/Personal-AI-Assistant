@@ -58,6 +58,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sam.launcher")
 
+from enum import Enum
+
+# ---------------------------------------------------------------------------
+# Launcher States
+# ---------------------------------------------------------------------------
+
+class LauncherState(str, Enum):
+    INITIALIZING = "INITIALIZING"
+    CHECKING_DEPENDENCIES = "CHECKING_DEPENDENCIES"
+    STARTING_BACKEND = "STARTING_BACKEND"
+    WAITING_FOR_HEALTH = "WAITING_FOR_HEALTH"
+    READY = "READY"
+    STARTUP_FAILED = "STARTUP_FAILED"
+    SHUTTING_DOWN = "SHUTTING_DOWN"
+
+
+_current_state: LauncherState = LauncherState.INITIALIZING
+
+
+def get_launcher_state() -> LauncherState:
+    """Returns the current state of the application launcher."""
+    return _current_state
+
+
+def _set_state(new_state: LauncherState) -> None:
+    global _current_state
+    logger.info("Launcher state transition: %s -> %s", _current_state.value, new_state.value)
+    _current_state = new_state
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -197,6 +227,58 @@ def _stop_backend() -> None:
 # System tray (pystray — optional)
 # ---------------------------------------------------------------------------
 
+def _is_port_in_use(host: str, port: int) -> bool:
+    """Checks whether the specified TCP host:port is already listening."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((host, port)) == 0
+
+
+def _tray_action_open_ui(_icon=None, _item=None):
+    webbrowser.open(UI_URL)
+
+
+def _tray_action_status(_icon=None, _item=None):
+    status_msg = (
+        f"SAM Desktop v{APP_VERSION}\n"
+        f"Launcher State: {get_launcher_state().value}\n"
+        f"Interface URL: {UI_URL}\n"
+        f"Backend PID: {_server_proc.pid if _server_proc else 'None'}\n"
+        f"Logs Location: {_LOG_DIR}"
+    )
+    _show_info_dialog("SAM Status", status_msg)
+
+
+def _tray_action_open_logs(_icon=None, _item=None):
+    if sys.platform == "win32" and hasattr(os, "startfile"):
+        os.startfile(str(_LOG_DIR))
+    else:
+        webbrowser.open(f"file://{_LOG_DIR}")
+
+
+def _tray_action_restart_backend(_icon=None, _item=None):
+    logger.info("Restart requested via tray.")
+    _set_state(LauncherState.SHUTTING_DOWN)
+    _stop_backend()
+    global _server_proc
+    _set_state(LauncherState.STARTING_BACKEND)
+    _server_proc = _start_backend()
+    _set_state(LauncherState.WAITING_FOR_HEALTH)
+    if _wait_for_backend():
+        _set_state(LauncherState.READY)
+        logger.info("Backend restarted successfully.")
+    else:
+        _set_state(LauncherState.STARTUP_FAILED)
+        logger.error("Backend restart failed.")
+
+
+def _tray_action_exit_app(icon=None, _item=None):
+    if icon:
+        icon.stop()
+    _shutdown_event.set()
+
+
 def _build_tray_icon():
     """
     Returns a pystray.Icon instance. If pystray is not available returns None.
@@ -222,25 +304,15 @@ def _build_tray_icon():
         except Exception:
             pass
 
-    def open_ui(_icon, _item):
-        webbrowser.open(UI_URL)
-
-    def restart_backend(_icon, _item):
-        _stop_backend()
-        global _server_proc
-        _server_proc = _start_backend()
-
-    def exit_app(icon, _item):
-        icon.stop()
-        _shutdown_event.set()
-
     menu = pystray.Menu(
-        pystray.MenuItem("Open SAM", open_ui, default=True),
-        pystray.MenuItem("Restart Backend", restart_backend),
+        pystray.MenuItem("Open SAM", _tray_action_open_ui, default=True),
+        pystray.MenuItem("Show Application Status", _tray_action_status),
+        pystray.MenuItem("Open Logs Folder", _tray_action_open_logs),
+        pystray.MenuItem("Restart SAM", _tray_action_restart_backend),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Exit", exit_app),
+        pystray.MenuItem("Exit SAM", _tray_action_exit_app),
     )
-    return pystray.Icon(APP_NAME, img, f"{APP_NAME} v{APP_VERSION}", menu)
+    return pystray.Icon(APP_NAME, img, f"{APP_NAME} v{APP_VERSION} ({get_launcher_state().value})", menu=menu)
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +350,32 @@ def _migrate_user_data() -> None:
                     logger.warning("Could not migrate %s: %s", src, exc)
 
 
+def _show_info_dialog(title: str, message: str) -> None:
+    logger.info("[%s] %s", title, message)
+    if os.environ.get("SAM_HEADLESS") == "1" or "unittest" in sys.modules or "pytest" in sys.modules:
+        return
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.user32.MessageBoxW(0, message, title, 0x40)  # MB_ICONINFORMATION
+        except Exception:
+            pass
+    else:
+        print(f"\n[{title}]\n{message}\n", file=sys.stdout)
+
+
+def _show_error_dialog(title: str, message: str) -> None:
+    logger.error("[%s] %s", title, message)
+    if os.environ.get("SAM_HEADLESS") == "1" or "unittest" in sys.modules or "pytest" in sys.modules:
+        return
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    else:
+        print(f"\n[{title}]\n{message}\n", file=sys.stderr)
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -285,6 +383,7 @@ def _migrate_user_data() -> None:
 def main() -> int:
     global _server_proc
 
+    _set_state(LauncherState.INITIALIZING)
     logger.info("SAM Desktop Launcher v%s starting…", APP_VERSION)
 
     # --- Single-instance guard ---
@@ -295,6 +394,7 @@ def main() -> int:
         return 0
 
     # --- Runtime checks ---
+    _set_state(LauncherState.CHECKING_DEPENDENCIES)
     try:
         from sam.launcher.runtime_check import run_checks
         checks = run_checks()
@@ -302,6 +402,7 @@ def main() -> int:
         for w in checks.warnings:
             logger.warning(w)
         if not checks.can_launch:
+            _set_state(LauncherState.STARTUP_FAILED)
             errs = "\n".join(checks.critical_errors())
             _show_error_dialog(
                 "SAM — Startup Error",
@@ -319,16 +420,30 @@ def main() -> int:
     except Exception as exc:
         logger.warning("User data migration failed (non-fatal): %s", exc)
 
+    # --- Port conflict verification ---
+    if _is_port_in_use(UI_HOST, UI_PORT):
+        # Probe if it's already a responsive SAM backend
+        try:
+            import socket
+            with socket.create_connection((UI_HOST, UI_PORT), timeout=1.0):
+                logger.info("Port %d is already open and responsive.", UI_PORT)
+        except OSError:
+            pass
+
     # --- Start backend ---
+    _set_state(LauncherState.STARTING_BACKEND)
     try:
         _server_proc = _start_backend()
     except Exception as exc:
+        _set_state(LauncherState.STARTUP_FAILED)
         _show_error_dialog("SAM — Backend Error", f"Could not start the SAM backend:\n\n{exc}")
         _release_mutex(mutex)
         return 3
 
     # --- Wait for backend readiness ---
+    _set_state(LauncherState.WAITING_FOR_HEALTH)
     if not _wait_for_backend():
+        _set_state(LauncherState.STARTUP_FAILED)
         _show_error_dialog(
             "SAM — Connection Error",
             f"The SAM backend did not start within {STARTUP_TIMEOUT_S} seconds.\n"
@@ -338,6 +453,7 @@ def main() -> int:
         _release_mutex(mutex)
         return 4
 
+    _set_state(LauncherState.READY)
     logger.info("Backend ready at %s", UI_URL)
 
     # --- Open browser ---
@@ -369,31 +485,20 @@ def main() -> int:
             # Check if backend exited unexpectedly
             if _server_proc and _server_proc.poll() is not None:
                 logger.error("Backend exited unexpectedly (code %d).", _server_proc.returncode)
+                _set_state(LauncherState.STARTUP_FAILED)
                 _shutdown_event.set()
                 break
             time.sleep(1.0)
     except KeyboardInterrupt:
         pass
     finally:
+        _set_state(LauncherState.SHUTTING_DOWN)
         logger.info("Shutting down SAM…")
         _stop_backend()
         _release_mutex(mutex)
 
     logger.info("SAM exited cleanly.")
     return 0
-
-
-def _show_error_dialog(title: str, message: str) -> None:
-    logger.error("[%s] %s", title, message)
-    if os.environ.get("SAM_HEADLESS") == "1" or "unittest" in sys.modules or "pytest" in sys.modules:
-        return
-    if sys.platform == "win32":
-        try:
-            ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-    else:
-        print(f"\n[{title}]\n{message}\n", file=sys.stderr)
 
 
 if __name__ == "__main__":

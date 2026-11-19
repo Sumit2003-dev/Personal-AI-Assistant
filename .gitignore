@@ -23,3 +23,9 @@ sam/logs/
 Thumbs.db
 [Dd]esktop.ini
 
+# Packaging / Distribution outputs
+build/
+dist/
+packaging/output/
+
+

@@ -655,5 +655,123 @@ class TestInstallerManifest(unittest.TestCase):
         self.assertIn("console=False", spec)
 
 
+# ===========================================================================
+# 12. Phase 7 Extended Launcher & Tray Validation
+# ===========================================================================
+
+class TestPhase7LauncherAndTray(unittest.TestCase):
+    """Explicit tests for Phase 7 LauncherState, tray actions, and port pre-checks."""
+
+    def test_launcher_state_enum_members(self):
+        from sam.launcher.app_launcher import LauncherState
+        expected = {
+            "INITIALIZING",
+            "CHECKING_DEPENDENCIES",
+            "STARTING_BACKEND",
+            "WAITING_FOR_HEALTH",
+            "READY",
+            "STARTUP_FAILED",
+            "SHUTTING_DOWN",
+        }
+        actual = {s.name for s in LauncherState}
+        self.assertEqual(actual, expected)
+
+    def test_get_and_set_launcher_state(self):
+        from sam.launcher.app_launcher import (
+            LauncherState,
+            get_launcher_state,
+            _set_state,
+        )
+        _set_state(LauncherState.INITIALIZING)
+        self.assertEqual(get_launcher_state(), LauncherState.INITIALIZING)
+        _set_state(LauncherState.READY)
+        self.assertEqual(get_launcher_state(), LauncherState.READY)
+
+    def test_is_port_in_use_detects_bound_socket(self):
+        from sam.launcher.app_launcher import _is_port_in_use
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        port = sock.getsockname()[1]
+        try:
+            self.assertTrue(_is_port_in_use("127.0.0.1", port))
+        finally:
+            sock.close()
+        # After socket closure, port should be free or closing
+        # Allow small OS delay
+        time.sleep(0.05)
+        # Check non-bound port
+        free_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        free_sock.bind(("127.0.0.1", 0))
+        free_port = free_sock.getsockname()[1]
+        free_sock.close()
+        self.assertFalse(_is_port_in_use("127.0.0.1", free_port))
+
+    def test_tray_menu_has_required_actions(self):
+        """Verify tray menu creation includes all Phase 7 required options."""
+        from sam.launcher.app_launcher import _build_tray_icon
+        with patch("pystray.Icon") as mock_icon_cls:
+            mock_icon = MagicMock()
+            mock_icon_cls.return_value = mock_icon
+            icon = _build_tray_icon()
+            self.assertIsNotNone(icon)
+            mock_icon_cls.assert_called_once()
+            # Inspect menu passed to pystray.Icon
+            call_kwargs = mock_icon_cls.call_args[1]
+            menu = call_kwargs.get("menu")
+            if menu is None and len(mock_icon_cls.call_args[0]) >= 4:
+                menu = mock_icon_cls.call_args[0][3]
+            self.assertIsNotNone(menu)
+            menu_items_text = [getattr(item, "text", str(item)) for item in menu.items]
+            self.assertTrue(any("Open SAM" in t for t in menu_items_text))
+            self.assertTrue(any("Show Application Status" in t for t in menu_items_text))
+            self.assertTrue(any("Open Logs Folder" in t for t in menu_items_text))
+            self.assertTrue(any("Restart SAM" in t for t in menu_items_text))
+            self.assertTrue(any("Exit SAM" in t for t in menu_items_text))
+
+    @patch("sam.launcher.app_launcher._show_info_dialog")
+    def test_show_status_tray_action(self, mock_dialog):
+        from sam.launcher.app_launcher import (
+            LauncherState,
+            _set_state,
+            _tray_action_status,
+        )
+        _set_state(LauncherState.READY)
+        _tray_action_status(None, None)
+        mock_dialog.assert_called_once()
+        args = mock_dialog.call_args[0]
+        self.assertIn("READY", args[1])
+
+
+# ===========================================================================
+# 13. Settings Runtime Data Paths Isolation Tests
+# ===========================================================================
+
+class TestSettingsRuntimeDataPaths(unittest.TestCase):
+    """Validates that settings.py correctly resolves user-mutable dirs outside installation dir."""
+
+    def test_sam_data_root_environment_variable_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            custom_data = Path(tmp) / "custom_sam"
+            with patch.dict(os.environ, {"SAM_DATA_ROOT": str(custom_data)}):
+                from sam.config.settings import _resolve_runtime_data_dir, _resolve_runtime_logs_dir
+                resolved_data = _resolve_runtime_data_dir()
+                resolved_logs = _resolve_runtime_logs_dir()
+                self.assertEqual(resolved_data, custom_data / "data")
+                self.assertEqual(resolved_logs, custom_data / "logs")
+
+    def test_frozen_runtime_routes_to_appdata(self):
+        with patch.dict(os.environ, {}, clear=False):
+            if "SAM_DATA_ROOT" in os.environ:
+                del os.environ["SAM_DATA_ROOT"]
+            with patch("sys.frozen", True, create=True):
+                with patch("sys._MEIPASS", "C:\\Program Files\\SAM", create=True):
+                    from sam.config.settings import _resolve_runtime_data_dir
+                    resolved = _resolve_runtime_data_dir()
+                    # Must be under AppData, NOT Program Files
+                    self.assertNotIn("Program Files", str(resolved))
+                    self.assertIn("SAM", str(resolved))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
